@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -23,9 +22,12 @@ var (
 )
 
 func main() {
+
+	dir, _ := os.Getwd()
+	log.Println(dir)
 	err = godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file: %w", err)
+		log.Fatalf("Error loading .env file: %s", err)
 	}
 
 	TOKEN = os.Getenv("TOKEN")
@@ -38,7 +40,7 @@ func main() {
 
 	Bot, err = discordgo.New("Bot " + TOKEN)
 	if err != nil {
-		panic(fmt.Errorf("error creating discord session: %s\n", err))
+		log.Fatalf("error creating discord session: %s\n", err)
 	}
 	defer Bot.Close()
 

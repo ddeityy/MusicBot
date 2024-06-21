@@ -1,4 +1,4 @@
-package musicbot
+package main
 
 import "github.com/bwmarrin/discordgo"
 
@@ -21,7 +21,7 @@ var Commands = []*discordgo.ApplicationCommand{
 	{Name: "add", Description: "Adds a song to the queue",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
-				Name:        "URL",
+				Name:        "url",
 				Description: "The URL of the song to add",
 				Type:        discordgo.ApplicationCommandOptionString,
 				Required:    true,
@@ -30,7 +30,7 @@ var Commands = []*discordgo.ApplicationCommand{
 	{Name: "remove", Description: "Removes a song from the queue",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
-				Name:        "Index",
+				Name:        "index",
 				Description: "The index of the song to remove",
 				Type:        discordgo.ApplicationCommandOptionInteger,
 				Required:    true,

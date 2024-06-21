@@ -1,37 +1,24 @@
-package musicbot
+package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/kkdai/youtube/v2"
-	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
-type Song struct {
-	Title     string
-	ID        string
-	URL       url.URL
-	VideoPath string
-	AudioPath string
-}
-
-type Item struct {
-	Snippet Snippet `json:"snippet"`
-}
-
-type Snippet struct {
-	Title string `json:"title"`
-}
-
 type Response struct {
-	Items []Item `json:"items"`
+	Items []struct {
+		Snippet struct {
+			Title string `json:"title"`
+		} `json:"snippet"`
+	} `json:"items"`
 }
 
 func IsYouTubeURL(u *url.URL) bool {
@@ -41,11 +28,15 @@ func IsYouTubeURL(u *url.URL) bool {
 
 func GetSongID(u url.URL) string {
 	var id string
-	if u.Path == "watch" {
+
+	if strings.Contains(u.Path, "/watch") { // normal yt link
 		id = u.Query().Get("v")
-	} else {
+	} else if strings.Contains(u.Path, "/shorts/") { // shorts yt link
+		id = strings.Split(u.Path, "/shorts/")[1]
+	} else { // share yt link
 		id = u.Path
 	}
+
 	return id
 }
 
@@ -58,24 +49,24 @@ func GetSongTitle(u url.URL) (string, error) {
 	)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("getSongTitle: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("getSongTitle: %w", err)
+		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 
 	var response Response
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("getSongTitle: failed to read response body: %w", err)
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	err = json.Unmarshal(respBytes, &response)
 	if err != nil {
-		log.Fatalf("getSongTitle: Error unmarshalling JSON: %v", err)
+		return "", fmt.Errorf("error unmarshalling JSON: %w", err)
 	}
 
 	title := response.Items[0].Snippet.Title
@@ -83,22 +74,24 @@ func GetSongTitle(u url.URL) (string, error) {
 	return title, nil
 }
 
-func (s *Song) Download() error {
-	if err := s.downloadVideo(); err != nil {
-		return err
+func DownloadSong(id string) (string, error) {
+	err := downloadVideo(id)
+	if err != nil {
+		return "", err
 	}
 
-	if err := s.convertToAudio(); err != nil {
-		return err
+	audioPath, err := convertToAudio(id)
+	if err != nil {
+		return "", err
 	}
 
-	return nil
+	return audioPath, nil
 }
 
-func (s *Song) downloadVideo() error {
+func downloadVideo(id string) error {
 	client := youtube.Client{}
 
-	video, err := client.GetVideo(s.ID)
+	video, err := client.GetVideo(id)
 	if err != nil {
 		return fmt.Errorf("error downloading video: %s", err)
 	}
@@ -111,7 +104,7 @@ func (s *Song) downloadVideo() error {
 	}
 	defer stream.Close()
 
-	file, err := os.Create(fmt.Sprintf("video/%s.mp4", s.ID))
+	file, err := os.Create(fmt.Sprintf("video/%s.mp4", id))
 	if err != nil {
 		return fmt.Errorf("error downloading video: %s", err)
 	}
@@ -122,21 +115,19 @@ func (s *Song) downloadVideo() error {
 		return fmt.Errorf("error downloading video: %s", err)
 	}
 
-	s.VideoPath = fmt.Sprintf("video/%s.mp4", s.ID)
-
 	return nil
 }
 
-func (s *Song) convertToAudio() error {
-	err := ffmpeg_go.
-		Input(s.VideoPath).
-		Output(fmt.Sprintf("audio/%s.mp3", s.ID)).
-		Run()
+func convertToAudio(id string) (string, error) {
+	audioPath := fmt.Sprintf("audio/%s.dca", id)
+	videoPath := fmt.Sprintf("video/%s.mp4", id)
+
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | dca > %s", videoPath, audioPath)
+	cmd := exec.Command("sh", "-c", cmdString)
+	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("error converting video to audio: %s", err)
+		return "", fmt.Errorf("error converting video to audio: %s", err)
 	}
 
-	s.AudioPath = fmt.Sprintf("audio/%s.mp3", s.ID)
-
-	return nil
+	return audioPath, nil
 }

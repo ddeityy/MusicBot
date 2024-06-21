@@ -1,10 +1,10 @@
 # music bot for memes
 
-.env file
+Flags:
 
-```env
-TOKEN=<DISCORD_TOKEN>
-APP=<DISCORD_APP_ID>
-GUILD=<DISCORD_GUILD_ID>
-YT=<GOOGLE_YT_API_TOKEN>
+```cmd
+--token="Your Discord bot token"
+--guild="Guild ID"
+--app="Application ID"
+--yt="YouTube API Key"
 ```

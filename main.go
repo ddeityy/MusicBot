@@ -1,12 +1,12 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/joho/godotenv"
 )
 
 var (
@@ -21,19 +21,20 @@ var (
 	Bot *discordgo.Session
 )
 
+var (
+	tokenFlag = flag.String("token", "", "Your Discord bot token")
+	guildFlag = flag.String("guild", "", "Guild ID where the bot operates")
+	appFlag   = flag.String("app", "", "Application ID for Discord bot")
+	ytFlag    = flag.String("yt", "", "YouTube API Key")
+)
+
 func main() {
+	flag.Parse()
 
-	dir, _ := os.Getwd()
-	log.Println(dir)
-	err = godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error loading .env file: %s", err)
-	}
-
-	TOKEN = os.Getenv("TOKEN")
-	GUILD = os.Getenv("GUILD")
-	APP = os.Getenv("APP")
-	YT = os.Getenv("YT")
+	TOKEN = *tokenFlag
+	GUILD = *guildFlag
+	APP = *appFlag
+	YT = *ytFlag
 
 	os.MkdirAll("./audio", 0755)
 	os.MkdirAll("./video", 0755)

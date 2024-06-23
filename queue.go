@@ -104,8 +104,9 @@ func (q *Queue) FormatQueue() string {
 	for i, song := range songs {
 		if i == 0 {
 			b.WriteString(fmt.Sprintf("%d. %s <--\n", i+1, song.Title))
+		} else {
+			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, song.Title))
 		}
-		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, song.Title))
 	}
 
 	return b.String()

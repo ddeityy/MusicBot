@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"math/rand"
-	URL "net/url"
 	"os"
 	"strings"
 	"sync"
@@ -36,20 +35,10 @@ func NewQueue() *Queue {
 	return &Queue{songs: make([]*Song, 0, 0)}
 }
 
-func (q *Queue) AddSong(url string) (string, error) {
-	u, err := URL.Parse(url)
+func (q *Queue) AddSong(id string) error {
+	title, err := GetSongTitle(id)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
-	}
-
-	if !IsYouTubeURL(u) {
-		return "", fmt.Errorf("url is not a valid youtube URL: %s", url)
-	}
-
-	id := GetSongID(*u)
-	title, err := GetSongTitle(*u)
-	if err != nil {
-		return "", fmt.Errorf("failed to get song title: %w", err)
+		return fmt.Errorf("failed to get song title: %w", err)
 	}
 
 	audioPath := "audio/" + id + ".dca"
@@ -58,18 +47,20 @@ func (q *Queue) AddSong(url string) (string, error) {
 	if err != nil {
 		audioPath, err = DownloadSong(id)
 		if err != nil {
-			return "", fmt.Errorf("failed download the song: %w", err)
+			return fmt.Errorf("failed download the song: %w", err)
 		}
 
 		if err = os.Remove(fmt.Sprintf("video/%s.mp4", id)); err != nil {
-			return "", fmt.Errorf("error removing video: %s", err)
+			return fmt.Errorf("error removing video: %s", err)
 		}
 	}
 
-	song := &Song{URL: *u, Title: title, ID: id, AudioPath: audioPath}
+	song := &Song{Title: title, ID: id, AudioPath: audioPath}
+	Q.mu.Lock()
 	q.songs = append(q.songs, song)
+	Q.mu.Unlock()
 
-	return song.Title, nil
+	return nil
 }
 
 func (q *Queue) RemoveSong(index int) (string, error) {
@@ -109,7 +100,11 @@ func (q *Queue) FormatQueue() string {
 	b := strings.Builder{}
 	b.Grow(len(songs) * 100)
 
+	b.WriteString("Currently playing:\n")
 	for i, song := range songs {
+		if i == 0 {
+			b.WriteString(fmt.Sprintf("%d. %s <--\n", i+1, song.Title))
+		}
 		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, song.Title))
 	}
 
@@ -137,6 +132,7 @@ func (q *Queue) PlaySong() {
 
 	if err := VC.Speaking(true); err != nil {
 		log.Println("Error setting voice to speaking:", err)
+		return
 	}
 
 loop:

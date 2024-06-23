@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +11,12 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/kkdai/youtube/v2"
+	ytv2 "github.com/kkdai/youtube/v2"
+	"google.golang.org/api/option"
+	"google.golang.org/api/youtube/v3"
 )
 
-type Response struct {
+type response struct {
 	Items []struct {
 		Snippet struct {
 			Title string `json:"title"`
@@ -26,27 +29,54 @@ func IsYouTubeURL(u *url.URL) bool {
 	return normalizedHost == "www.youtube.com" || normalizedHost == "youtube.com" || normalizedHost == "youtu.be"
 }
 
-func GetSongID(u url.URL) string {
-	var id string
+func GetSongID(u url.URL) ([]string, error) {
+	var ids []string
 
-	if strings.Contains(u.Path, "/watch") { // normal yt link
-		id = u.Query().Get("v")
+	if strings.Contains(u.Path, "/playlist") { // playlist yt link
+		ids, err = parsePlaylist(u)
+		if err != nil {
+			return nil, err
+		}
+	} else if strings.Contains(u.Path, "/watch") { // normal yt link
+		ids = append(ids, u.Query().Get("v"))
 	} else if strings.Contains(u.Path, "/shorts/") { // shorts yt link
-		id = strings.Split(u.Path, "/shorts/")[1]
-	} else { // share yt link
-		id = u.Path
+		ids = append(ids, strings.Split(u.Path, "/shorts/")[1])
+	} else { // shorten yt link
+		ids = append(ids, u.Path)
 	}
 
-	return id
+	return ids, nil
 }
 
-func GetSongTitle(u url.URL) (string, error) {
-	id := GetSongID(u)
+func GetSongTitle(id string) (string, error) {
+	service, err := youtube.NewService(
+		context.Background(),
+		option.WithAPIKey(YT),
+	)
+	if err != nil {
+		return "", fmt.Errorf("error creating yt service: %w", err)
+	}
+	call := service.Videos.List([]string{"snippet"})
+	call = call.Id(id)
+	resp, err := call.Do()
+	if err != nil {
+		return "", fmt.Errorf("error getting playlist data: %w", err)
+	}
+	var title string
+	for _, video := range resp.Items {
+		title = video.Snippet.Title
+	}
+
+	return title, nil
+}
+
+func GetSongTitleOld(id string) (string, error) {
 	apiURL := fmt.Sprintf(
 		"https://www.googleapis.com/youtube/v3/videos?id=%s&key=%s&fields=items(snippet(title))&part=snippet",
 		id,
 		YT,
 	)
+
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
@@ -57,7 +87,7 @@ func GetSongTitle(u url.URL) (string, error) {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 
-	var response Response
+	var response response
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -89,7 +119,7 @@ func DownloadSong(id string) (string, error) {
 }
 
 func downloadVideo(id string) error {
-	client := youtube.Client{}
+	client := ytv2.Client{}
 
 	video, err := client.GetVideo(id)
 	if err != nil {
@@ -112,6 +142,7 @@ func downloadVideo(id string) error {
 
 	_, err = io.Copy(file, stream)
 	if err != nil {
+		os.Remove(fmt.Sprintf("video/%s.mp4", id))
 		return fmt.Errorf("error downloading video: %s", err)
 	}
 
@@ -122,7 +153,7 @@ func convertToAudio(id string) (string, error) {
 	audioPath := fmt.Sprintf("audio/%s.dca", id)
 	videoPath := fmt.Sprintf("video/%s.mp4", id)
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | dca > %s", videoPath, audioPath)
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", videoPath, audioPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 	err := cmd.Run()
 	if err != nil {
@@ -130,4 +161,29 @@ func convertToAudio(id string) (string, error) {
 	}
 
 	return audioPath, nil
+}
+
+func parsePlaylist(u url.URL) ([]string, error) {
+	service, err := youtube.NewService(
+		context.Background(),
+		option.WithAPIKey(YT),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error creating yt service: %w", err)
+	}
+
+	call := service.PlaylistItems.List([]string{"snippet"})
+	call = call.MaxResults(50)
+	call = call.PlaylistId(u.Query().Get("list"))
+	resp, err := call.Do()
+	if err != nil {
+		return nil, fmt.Errorf("error getting playlist data: %w", err)
+	}
+
+	videos := make([]string, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		videos = append(videos, item.Snippet.ResourceId.VideoId)
+	}
+
+	return videos, nil
 }

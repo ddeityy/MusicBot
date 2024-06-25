@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 var (
@@ -26,16 +28,23 @@ var (
 	isPlaying bool
 )
 
-type Queue struct {
+type Voice struct {
+	conn      *discordgo.VoiceConnection
+	inVoice   bool
+	isPaused  bool
+	isPlaying bool
+}
+
+type SongQueue struct {
 	mu    sync.RWMutex
 	songs []*Song
 }
 
-func NewQueue() *Queue {
-	return &Queue{songs: make([]*Song, 0, 0)}
+func NewSongQueue() *SongQueue {
+	return &SongQueue{songs: make([]*Song, 0, 0)}
 }
 
-func (q *Queue) AddSong(id string) error {
+func (q *SongQueue) AddSong(id string) error {
 	title, err := GetSongTitle(id)
 	if err != nil {
 		return fmt.Errorf("failed to get song title: %w", err)
@@ -55,46 +64,46 @@ func (q *Queue) AddSong(id string) error {
 		}
 	}
 
-	song := &Song{Title: title, ID: id, AudioPath: audioPath}
-	Q.mu.Lock()
+	song := NewSong(title, id, audioPath)
+	Queue.mu.Lock()
 	q.songs = append(q.songs, song)
-	Q.mu.Unlock()
+	Queue.mu.Unlock()
 
 	return nil
 }
 
-func (q *Queue) RemoveSong(index int) (string, error) {
+func (q *SongQueue) RemoveSong(index int) (string, error) {
 	if index <= 0 || index > len(q.songs) {
 		return "", fmt.Errorf("index out of range: %d", index)
 	}
 
-	title := q.songs[index-1].Title
+	title := q.songs[index-1].title
 
 	q.songs = append(q.songs[:index-1], q.songs[index:]...)
 
 	return title, nil
 }
 
-func (q *Queue) Empty() {
+func (q *SongQueue) Empty() {
 	q.songs = make([]*Song, 0, 0)
 }
 
-func (q *Queue) GetCurrentSong() *Song {
+func (q *SongQueue) GetCurrentSong() *Song {
 	if len(q.songs) == 0 {
 		return nil
 	}
 	return q.songs[0]
 }
 
-func (q *Queue) GetQueue() []*Song {
+func (q *SongQueue) GetSongQueue() []*Song {
 	return q.songs
 }
 
-func (q *Queue) FormatQueue() string {
-	songs := q.GetQueue()
+func (q *SongQueue) FormatQueue() string {
+	songs := q.GetSongQueue()
 
 	if len(songs) == 0 {
-		return "No songs in queue"
+		return "No songs in SongQueue"
 	}
 
 	b := strings.Builder{}
@@ -103,27 +112,27 @@ func (q *Queue) FormatQueue() string {
 	b.WriteString("Currently playing:\n")
 	for i, song := range songs {
 		if i == 0 {
-			b.WriteString(fmt.Sprintf("%d. %s <--\n", i+1, song.Title))
+			b.WriteString(fmt.Sprintf("%d. %s <--\n", i+1, song.title))
 		} else {
-			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, song.Title))
+			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, song.title))
 		}
 	}
 
 	return b.String()
 }
 
-func (q *Queue) Shuffle() {
+func (q *SongQueue) Shuffle() {
 	for i := len(q.songs) - 1; i > 0; i-- {
 		j := rand.Intn(i + 1)
 		q.songs[i], q.songs[j] = q.songs[j], q.songs[i]
 	}
 }
 
-func (q *Queue) IsEmpty() bool {
+func (q *SongQueue) IsEmpty() bool {
 	return len(q.songs) == 0
 }
 
-func (q *Queue) PlaySong() {
+func (q *SongQueue) PlaySong() {
 	song := q.GetCurrentSong()
 
 	if err := q.LoadSound(); err != nil {
@@ -137,7 +146,7 @@ func (q *Queue) PlaySong() {
 	}
 
 loop:
-	for _, buff := range song.Buffer {
+	for _, buff := range song.buffer {
 		select {
 		case <-pauseChan:
 			isPaused = true
@@ -173,21 +182,21 @@ loop:
 	q.PlaySong()
 }
 
-func (q *Queue) PausePlayback() {
+func (q *SongQueue) PausePlayback() {
 	pauseChan <- true
 }
 
-func (q *Queue) ResumePlayback() {
+func (q *SongQueue) ResumePlayback() {
 	resumeChan <- true
 }
 
-func (q *Queue) SkipSong() {
+func (q *SongQueue) SkipSong() {
 	skipChan <- struct{}{}
 }
 
-func (q *Queue) LoadSound() error {
+func (q *SongQueue) LoadSound() error {
 	song := q.GetCurrentSong()
-	file, err := os.Open(song.AudioPath)
+	file, err := os.Open(song.audioPath)
 	if err != nil {
 		return fmt.Errorf("error opening file: %w", err)
 	}
@@ -216,6 +225,6 @@ func (q *Queue) LoadSound() error {
 			return fmt.Errorf("Error reading file: %w", err)
 		}
 
-		song.Buffer = append(song.Buffer, InBuf)
+		song.buffer = append(song.buffer, InBuf)
 	}
 }

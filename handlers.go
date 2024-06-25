@@ -65,7 +65,7 @@ func handleJoin(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	err = VC.Speaking(false)
+	err := VC.Speaking(false)
 	if err != nil {
 		log.Println(err)
 	}
@@ -122,14 +122,14 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	if len(ids) == 1 {
-		if err := Q.AddSong(ids[0]); err != nil {
+		if err := Queue.AddSong(ids[0]); err != nil {
 			log.Println(err)
 			errString := err.Error()
 			response.Content = &errString
 			s.InteractionResponseEdit(i.Interaction, response)
 			return
 		}
-		title := Q.GetCurrentSong().Title
+		title := Queue.GetCurrentSong().title
 		success := fmt.Sprintf("Successfully added: %s", title)
 		response.Content = &success
 		s.InteractionResponseEdit(i.Interaction, response)
@@ -139,7 +139,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		if !isPlaying {
-			go Q.PlaySong()
+			go Queue.PlaySong()
 		}
 
 		return
@@ -149,7 +149,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tempId := id
 		time.Sleep(200 * time.Millisecond)
 		go func() error {
-			if err := Q.AddSong(tempId); err != nil {
+			if err := Queue.AddSong(tempId); err != nil {
 				log.Println(err)
 				errString := err.Error()
 				response.Content = &errString
@@ -169,7 +169,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	if !isPlaying {
-		go Q.PlaySong()
+		go Queue.PlaySong()
 	}
 }
 
@@ -180,7 +180,7 @@ func handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	index := int(i.ApplicationCommandData().Options[0].IntValue())
 
-	title, err := Q.RemoveSong(index)
+	title, err := Queue.RemoveSong(index)
 	if err != nil {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -207,7 +207,7 @@ func handleQueue(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: Q.FormatQueue(),
+			Content: Queue.FormatQueue(),
 		},
 	})
 }
@@ -217,15 +217,15 @@ func handleShuffle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	Q.mu.Lock()
-	Q.Shuffle()
-	Q.mu.Unlock()
+	Queue.mu.Lock()
+	Queue.Shuffle()
+	Queue.mu.Unlock()
 
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintf("Successfully shuffled! New queue:\n%s", Q.FormatQueue()),
+			Content: fmt.Sprintf("Successfully shuffled! New queue:\n%s", Queue.FormatQueue()),
 		},
 	})
 }
@@ -235,9 +235,9 @@ func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	Q.mu.Lock()
-	Q.Empty()
-	Q.mu.Unlock()
+	Queue.mu.Lock()
+	Queue.Empty()
+	Queue.mu.Unlock()
 
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -263,7 +263,7 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 
-	if Q.IsEmpty() {
+	if Queue.IsEmpty() {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -274,9 +274,9 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	Q.mu.Lock()
-	song := Q.GetCurrentSong()
-	Q.mu.Unlock()
+	Queue.mu.Lock()
+	song := Queue.GetCurrentSong()
+	Queue.mu.Unlock()
 
 	if !inVC {
 		handleJoin(s, i)
@@ -286,11 +286,11 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintf("Playing %s", song.Title),
+			Content: fmt.Sprintf("Playing %s", song.title),
 		},
 	})
 
-	go Q.PlaySong()
+	go Queue.PlaySong()
 }
 
 func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -317,7 +317,7 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			},
 		})
 		isPlaying = true
-		Q.ResumePlayback()
+		Queue.ResumePlayback()
 	} else {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -327,7 +327,7 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			},
 		})
 		isPlaying = false
-		Q.PausePlayback()
+		Queue.PausePlayback()
 	}
 }
 
@@ -346,7 +346,7 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 
-	if Q.IsEmpty() {
+	if Queue.IsEmpty() {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -356,9 +356,9 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		})
 	}
 
-	Q.mu.Lock()
-	Q.SkipSong()
-	Q.mu.Unlock()
+	Queue.mu.Lock()
+	Queue.SkipSong()
+	Queue.mu.Unlock()
 
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,

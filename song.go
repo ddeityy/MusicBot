@@ -1,12 +1,17 @@
 package main
 
 type Song struct {
-	Title     string
-	ID        string
-	AudioPath string
-	Buffer    [][]byte
+	title     string
+	id        string
+	audioPath string
+	buffer    [][]byte
+}
+
+func NewSong(title, id, audioPath string) *Song {
+	buffer := make([][]byte, 0)
+	return &Song{title, id, audioPath, buffer}
 }
 
 func (s *Song) ClearBuffer() {
-	s.Buffer = make([][]byte, 0)
+	s.buffer = make([][]byte, 0)
 }

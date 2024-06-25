@@ -30,6 +30,7 @@ func IsYouTubeURL(u *url.URL) bool {
 }
 
 func GetSongID(u url.URL) ([]string, error) {
+	var err error
 	var ids []string
 
 	if strings.Contains(u.Path, "/playlist") { // playlist yt link

@@ -14,7 +14,6 @@ var (
 
 func init() {
 	os.MkdirAll("./audio", 0755)
-	os.MkdirAll("./video", 0755)
 
 	tokenFlag := flag.String("token", "", "Your Discord bot token")
 	guildFlag := flag.String("guild", "", "Guild ID where the bot operates")

@@ -122,14 +122,14 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	if len(ids) == 1 {
-		if err := Queue.AddSong(ids[0]); err != nil {
+		var title string
+		if title, err = Queue.AddSong(*u, ids[0]); err != nil {
 			log.Println(err)
 			errString := err.Error()
 			response.Content = &errString
 			s.InteractionResponseEdit(i.Interaction, response)
 			return
 		}
-		title := Queue.GetCurrentSong().title
 		success := fmt.Sprintf("Successfully added: %s", title)
 		response.Content = &success
 		s.InteractionResponseEdit(i.Interaction, response)
@@ -149,7 +149,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tempId := id
 		time.Sleep(200 * time.Millisecond)
 		go func() error {
-			if err := Queue.AddSong(tempId); err != nil {
+			if _, err := Queue.AddSong(*u, tempId); err != nil {
 				log.Println(err)
 				errString := err.Error()
 				response.Content = &errString
@@ -257,7 +257,6 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Already playing"),
 			},
 		})
@@ -267,7 +266,6 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Queue is empty, use /add"),
 			},
 		})
@@ -285,7 +283,6 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
 			Content: fmt.Sprintf("Playing %s", song.title),
 		},
 	})
@@ -302,7 +299,6 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Not in voice chat, use /join or /play"),
 			},
 		})
@@ -312,21 +308,17 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Resuming"),
 			},
 		})
-		isPlaying = true
 		Queue.ResumePlayback()
 	} else {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Pausing"),
 			},
 		})
-		isPlaying = false
 		Queue.PausePlayback()
 	}
 }
@@ -340,7 +332,6 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Not in voice chat, use /join"),
 			},
 		})
@@ -350,7 +341,6 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
 				Content: fmt.Sprintf("Queue is empty, use /add"),
 			},
 		})
@@ -363,7 +353,6 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
 			Content: fmt.Sprintf("Skipped"),
 		},
 	})

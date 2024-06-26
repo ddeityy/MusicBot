@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -44,23 +45,19 @@ func NewSongQueue() *SongQueue {
 	return &SongQueue{songs: make([]*Song, 0, 0)}
 }
 
-func (q *SongQueue) AddSong(id string) error {
+func (q *SongQueue) AddSong(url url.URL, id string) (string, error) {
 	title, err := GetSongTitle(id)
 	if err != nil {
-		return fmt.Errorf("failed to get song title: %w", err)
+		return "", fmt.Errorf("failed to get song title: %w", err)
 	}
 
 	audioPath := "audio/" + id + ".dca"
 
 	_, err = os.Stat(audioPath)
 	if err != nil {
-		audioPath, err = DownloadSong(id)
+		audioPath, err = DownloadSong(url, id)
 		if err != nil {
-			return fmt.Errorf("failed download the song: %w", err)
-		}
-
-		if err = os.Remove(fmt.Sprintf("video/%s.mp4", id)); err != nil {
-			return fmt.Errorf("error removing video: %s", err)
+			return "", fmt.Errorf("failed download the song: %w", err)
 		}
 	}
 
@@ -69,7 +66,7 @@ func (q *SongQueue) AddSong(id string) error {
 	q.songs = append(q.songs, song)
 	Queue.mu.Unlock()
 
-	return nil
+	return title, nil
 }
 
 func (q *SongQueue) RemoveSong(index int) (string, error) {
@@ -149,9 +146,11 @@ loop:
 	for _, buff := range song.buffer {
 		select {
 		case <-pauseChan:
+			isPlaying = false
 			isPaused = true
 			// Wait for resume signal
 			<-resumeChan
+			isPlaying = true
 			isPaused = false
 		case <-skipChan:
 			break loop
@@ -168,6 +167,7 @@ loop:
 	}
 
 	// Cleanup
+	isPlaying = false
 	song.ClearBuffer()
 	q.mu.Lock()
 	q.RemoveSong(1)

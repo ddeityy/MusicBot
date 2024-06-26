@@ -2,26 +2,28 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 
-	ytv2 "github.com/kkdai/youtube/v2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
 
-type response struct {
-	Items []struct {
-		Snippet struct {
-			Title string `json:"title"`
-		} `json:"snippet"`
-	} `json:"items"`
+type Season int
+
+const (
+	YouTube Season = iota
+	VK
+	Winter
+	Spring
+)
+
+type song struct {
+	url url.URL
+	t   Season
 }
 
 func IsYouTubeURL(u *url.URL) bool {
@@ -71,97 +73,46 @@ func GetSongTitle(id string) (string, error) {
 	return title, nil
 }
 
-func GetSongTitleOld(id string) (string, error) {
-	apiURL := fmt.Sprintf(
-		"https://www.googleapis.com/youtube/v3/videos?id=%s&key=%s&fields=items(snippet(title))&part=snippet",
-		id,
-		YT,
-	)
-
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+func DownloadSong(url url.URL, id string) (string, error) {
+	if err := downloadAudio(url, id); err != nil {
+		return "", fmt.Errorf("error downloading audio: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+	if err := convertToDCA(id); err != nil {
+		return "", fmt.Errorf("error converting to dca: %w", err)
 	}
 
-	var response response
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	err = json.Unmarshal(respBytes, &response)
-	if err != nil {
-		return "", fmt.Errorf("error unmarshalling JSON: %w", err)
-	}
-
-	title := response.Items[0].Snippet.Title
-
-	return title, nil
+	return fmt.Sprintf("audio/%s.dca", id), nil
 }
 
-func DownloadSong(id string) (string, error) {
-	err := downloadVideo(id)
+func convertToDCA(id string) error {
+	audioPath := fmt.Sprintf("audio/%s.opus", id)
+	DCAPath := fmt.Sprintf("audio/%s.dca", id)
+
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
+	cmd := exec.Command("sh", "-c", cmdString)
+	err := cmd.Run()
 	if err != nil {
-		return "", err
+		return fmt.Errorf("error converting video to audio: %s", err)
 	}
 
-	audioPath, err := convertToAudio(id)
-	if err != nil {
-		return "", err
-	}
-
-	return audioPath, nil
-}
-
-func downloadVideo(id string) error {
-	client := ytv2.Client{}
-
-	video, err := client.GetVideo(id)
-	if err != nil {
-		return fmt.Errorf("error downloading video: %s", err)
-	}
-
-	formats := video.Formats.WithAudioChannels() // only get videos with audio
-
-	stream, _, err := client.GetStream(video, &formats[0])
-	if err != nil {
-		return fmt.Errorf("error downloading video: %s", err)
-	}
-	defer stream.Close()
-
-	file, err := os.Create(fmt.Sprintf("video/%s.mp4", id))
-	if err != nil {
-		return fmt.Errorf("error downloading video: %s", err)
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, stream)
-	if err != nil {
-		os.Remove(fmt.Sprintf("video/%s.mp4", id))
-		return fmt.Errorf("error downloading video: %s", err)
+	if err := os.Remove(audioPath); err != nil {
+		return fmt.Errorf("error removing audio file: %s", err)
 	}
 
 	return nil
 }
 
-func convertToAudio(id string) (string, error) {
-	audioPath := fmt.Sprintf("audio/%s.dca", id)
-	videoPath := fmt.Sprintf("video/%s.mp4", id)
+func downloadAudio(url url.URL, id string) error {
+	cmdString := fmt.Sprintf(`yt-dlp -x "%s" -o audio/%s`, url.String(), id)
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", videoPath, audioPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("error converting video to audio: %s", err)
+		return fmt.Errorf("error converting video to audio: %s", err)
 	}
 
-	return audioPath, nil
+	return nil
 }
 
 func parsePlaylist(u url.URL) ([]string, error) {

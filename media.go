@@ -6,7 +6,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
@@ -104,12 +106,30 @@ func convertToDCA(id string) error {
 }
 
 func downloadAudio(url url.URL, id string) error {
-	cmdString := fmt.Sprintf(`yt-dlp -x "%s" -o audio/%s`, url.String(), id)
+	cmdString := fmt.Sprintf(`yt-dlp -x "%s" --audio-quality 0 -o audio/%s`, url.String(), id)
 
 	cmd := exec.Command("sh", "-c", cmdString)
 	err := cmd.Run()
 	if err != nil {
 		return fmt.Errorf("error converting video to audio: %s", err)
+	}
+
+	if start := url.Query().Get("t"); start != "" {
+		seconds, err := strconv.Atoi(start)
+		if err != nil {
+			return fmt.Errorf("error parsing start time: %s", err)
+		}
+
+		parsedTime := time.Unix(0, (time.Duration(seconds) * time.Second).Nanoseconds())
+		timeString := strings.Split(parsedTime.String(), " ")[1]
+
+		cmdString := fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy %s.opus -y`, timeString, id, id)
+
+		cmd := exec.Command("sh", "-c", cmdString)
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error cutting audio: %s", err)
+		}
 	}
 
 	return nil

@@ -1,5 +1,7 @@
 package main
 
+import "log"
+
 type Song struct {
 	title     string
 	id        string
@@ -14,4 +16,5 @@ func NewSong(title, id, audioPath string) *Song {
 
 func (s *Song) ClearBuffer() {
 	s.buffer = make([][]byte, 0)
+	log.Println("Cleared audio buffer")
 }

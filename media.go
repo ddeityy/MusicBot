@@ -115,6 +115,7 @@ func downloadAudio(url url.URL, id string) error {
 	}
 
 	if start := url.Query().Get("t"); start != "" {
+
 		seconds, err := strconv.Atoi(start)
 		if err != nil {
 			return fmt.Errorf("error parsing start time: %s", err)
@@ -123,15 +124,22 @@ func downloadAudio(url url.URL, id string) error {
 		parsedTime := time.Unix(0, (time.Duration(seconds) * time.Second).Nanoseconds())
 		timeString := strings.Split(parsedTime.String(), " ")[1]
 
-		cmdString := fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy %s.opus -y`, timeString, id, id)
+		cmdString := fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy audio/%s_temp.opus -y`, timeString, id, id)
 
 		cmd := exec.Command("sh", "-c", cmdString)
 		err = cmd.Run()
 		if err != nil {
 			return fmt.Errorf("error cutting audio: %s", err)
 		}
-	}
 
+		cmdString = fmt.Sprintf(`mv audio/%s_temp.opus audio/%s.opus`, id, id)
+
+		cmd = exec.Command("sh", "-c", cmdString)
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("error cutting audio: %s", err)
+		}
+	}
 	return nil
 }
 

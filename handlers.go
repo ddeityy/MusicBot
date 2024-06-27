@@ -62,18 +62,23 @@ func handleJoin(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		},
 	})
 
+	log.Println("Joined voice channel")
 }
 
 func handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	err := VC.Speaking(false)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error disabling voice: ", err)
+		return
 	}
+
 	if err = VC.Disconnect(); err != nil {
 		log.Println("Error leaving voice channel: ", err)
 		return
 	}
+
 	inVC = false
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -81,6 +86,8 @@ func handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Content: fmt.Sprintln("Left!"),
 		},
 	})
+
+	log.Println("Left voice channel")
 }
 
 func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -131,6 +138,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 		success := fmt.Sprintf("Successfully added: %s", title)
+		log.Println(success)
 		response.Content = &success
 		s.InteractionResponseEdit(i.Interaction, response)
 
@@ -161,6 +169,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	success := fmt.Sprintf("Successfully added: %d songs", len(ids))
+	log.Println(success)
 	response.Content = &success
 	s.InteractionResponseEdit(i.Interaction, response)
 
@@ -182,6 +191,7 @@ func handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	title, err := Queue.RemoveSong(index)
 	if err != nil {
+		log.Println("Error removing song from queue: ", err)
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -190,6 +200,7 @@ func handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			},
 		})
 	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -197,6 +208,8 @@ func handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Content: fmt.Sprintf("Successfully removed: %s", title),
 		},
 	})
+
+	log.Println("Successfully removed: ", title)
 }
 
 func handleQueue(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -260,6 +273,7 @@ func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Content: fmt.Sprintf("Already playing"),
 			},
 		})
+		return
 	}
 
 	if Queue.IsEmpty() {
@@ -302,17 +316,10 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Content: fmt.Sprintf("Not in voice chat, use /join or /play"),
 			},
 		})
+		return
 	}
 
-	if isPaused {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Resuming"),
-			},
-		})
-		Queue.ResumePlayback()
-	} else {
+	if !isPaused {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -320,7 +327,16 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			},
 		})
 		Queue.PausePlayback()
+		return
 	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf("Resuming"),
+		},
+	})
+	Queue.ResumePlayback()
 }
 
 func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -335,6 +351,7 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Content: fmt.Sprintf("Not in voice chat, use /join"),
 			},
 		})
+		return
 	}
 
 	if Queue.IsEmpty() {
@@ -344,6 +361,7 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Content: fmt.Sprintf("Queue is empty, use /add"),
 			},
 		})
+		return
 	}
 
 	Queue.mu.Lock()

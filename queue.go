@@ -142,17 +142,21 @@ func (q *SongQueue) PlaySong() {
 		return
 	}
 
+	log.Println("Playing song:", song.title)
 loop:
 	for _, buff := range song.buffer {
 		select {
 		case <-pauseChan:
 			isPlaying = false
 			isPaused = true
+			log.Println("Pausing")
 			// Wait for resume signal
 			<-resumeChan
 			isPlaying = true
 			isPaused = false
+			log.Println("Resuming")
 		case <-skipChan:
+			log.Println("Skipping")
 			break loop
 		default:
 			if !isPaused {
@@ -172,6 +176,7 @@ loop:
 	q.mu.Lock()
 	q.RemoveSong(1)
 	q.mu.Unlock()
+	os.Remove(song.audioPath)
 
 	time.Sleep(500 * time.Millisecond)
 

@@ -177,7 +177,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				handleJoin(s, i)
 			}
 
-			if !isPlaying {
+			if !isPlaying || !isPaused {
 				go Queue.PlaySong()
 			}
 
@@ -208,7 +208,7 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			handleJoin(s, i)
 		}
 
-		if !isPlaying {
+		if !isPlaying || !isPaused {
 			go Queue.PlaySong()
 		}
 	}

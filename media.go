@@ -16,20 +16,6 @@ import (
 	"google.golang.org/api/youtube/v3"
 )
 
-type Season int
-
-const (
-	YouTube Season = iota
-	VK
-	Winter
-	Spring
-)
-
-type song struct {
-	url url.URL
-	t   Season
-}
-
 func IsYouTubeURL(u *url.URL) bool {
 	normalizedHost := strings.ToLower(u.Hostname())
 	return normalizedHost == "www.youtube.com" || normalizedHost == "youtube.com" || normalizedHost == "youtu.be"

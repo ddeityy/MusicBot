@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -115,7 +117,6 @@ func downloadAudio(url url.URL, id string) error {
 	}
 
 	if start := url.Query().Get("t"); start != "" {
-
 		seconds, err := strconv.Atoi(start)
 		if err != nil {
 			return fmt.Errorf("error parsing start time: %s", err)
@@ -166,4 +167,43 @@ func parsePlaylist(u url.URL) ([]string, error) {
 	}
 
 	return videos, nil
+}
+
+func downloadAttachment(url string) (*Song, error) {
+	res, err := http.DefaultClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error downloading attachment: %w", err)
+	}
+	defer res.Body.Close()
+	urlSegments := strings.Split(res.Request.URL.Path, "/")
+	fileName := strings.Split(urlSegments[len(urlSegments)-1], "?")[0]
+	title := strings.Split(fileName, ".")[0]
+	audioPath := fmt.Sprintf("audio/%s", fileName)
+	DCAPath := strings.Split(audioPath, ".")[0] + ".dca"
+
+	file, err := os.Create(audioPath)
+	if err != nil {
+		return nil, fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error copying file: %w", err)
+	}
+
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
+	cmd := exec.Command("sh", "-c", cmdString)
+	err = cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("error converting video to audio: %s", err)
+	}
+
+	if err := os.Remove(audioPath); err != nil {
+		return nil, fmt.Errorf("error removing audio file: %s", err)
+	}
+
+	song := NewSong(title, "", DCAPath)
+
+	return song, nil
 }

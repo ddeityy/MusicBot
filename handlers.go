@@ -95,49 +95,29 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	url := i.ApplicationCommandData().Options[0].StringValue()
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}})
 
 	response := &discordgo.WebhookEdit{}
 
-	u, err := URL.Parse(url)
-	if err != nil {
-		log.Println(err)
-		errString := err.Error()
-		response.Content = &errString
-		s.InteractionResponseEdit(i.Interaction, response)
-		return
-	}
-
-	if !IsYouTubeURL(u) {
-		log.Println(err)
-		errString := "invalid YT link"
-		response.Content = &errString
-		s.InteractionResponseEdit(i.Interaction, response)
-		return
-	}
-
-	ids, err := GetSongID(*u)
-	if err != nil {
-		log.Println(err)
-		errString := err.Error()
-		response.Content = &errString
-		s.InteractionResponseEdit(i.Interaction, response)
-		return
-	}
-
-	if len(ids) == 1 {
-		var title string
-		if title, err = Queue.AddSong(*u, ids[0]); err != nil {
+	switch i.ApplicationCommandData().Options[0].Name {
+	case "file":
+		attachmentID := i.ApplicationCommandData().Options[0].Value.(string)
+		attachmentUrl := i.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
+		song, err := downloadAttachment(attachmentUrl)
+		if err != nil {
 			log.Println(err)
 			errString := err.Error()
 			response.Content = &errString
 			s.InteractionResponseEdit(i.Interaction, response)
 			return
 		}
-		success := fmt.Sprintf("Successfully added: %s", title)
+		Queue.mu.Lock()
+		Queue.songs = append(Queue.songs, song)
+		Queue.mu.Unlock()
+
+		success := fmt.Sprintf("Successfully added: %s", song.title)
 		log.Println(success)
 		response.Content = &success
 		s.InteractionResponseEdit(i.Interaction, response)
@@ -151,34 +131,86 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 		return
-	}
+	case "url":
+		url := i.ApplicationCommandData().Options[0].StringValue()
+		u, err := URL.Parse(url)
+		if err != nil {
+			log.Println(err)
+			errString := err.Error()
+			response.Content = &errString
+			s.InteractionResponseEdit(i.Interaction, response)
+			return
+		}
 
-	for _, id := range ids {
-		tempId := id
-		time.Sleep(200 * time.Millisecond)
-		go func() error {
-			if _, err := Queue.AddSong(*u, tempId); err != nil {
+		if !IsYouTubeURL(u) {
+			log.Println(err)
+			errString := "invalid YT link"
+			response.Content = &errString
+			s.InteractionResponseEdit(i.Interaction, response)
+			return
+		}
+
+		ids, err := GetSongID(*u)
+		if err != nil {
+			log.Println(err)
+			errString := err.Error()
+			response.Content = &errString
+			s.InteractionResponseEdit(i.Interaction, response)
+			return
+		}
+
+		if len(ids) == 1 {
+			var title string
+			if title, err = Queue.AddSong(*u, ids[0]); err != nil {
 				log.Println(err)
 				errString := err.Error()
 				response.Content = &errString
 				s.InteractionResponseEdit(i.Interaction, response)
-				return err
+				return
 			}
-			return nil
-		}()
-	}
+			success := fmt.Sprintf("Successfully added: %s", title)
+			log.Println(success)
+			response.Content = &success
+			s.InteractionResponseEdit(i.Interaction, response)
 
-	success := fmt.Sprintf("Successfully added: %d songs", len(ids))
-	log.Println(success)
-	response.Content = &success
-	s.InteractionResponseEdit(i.Interaction, response)
+			if !inVC {
+				handleJoin(s, i)
+			}
 
-	if !inVC {
-		handleJoin(s, i)
-	}
+			if !isPlaying {
+				go Queue.PlaySong()
+			}
 
-	if !isPlaying {
-		go Queue.PlaySong()
+			return
+		}
+
+		for _, id := range ids {
+			tempId := id
+			time.Sleep(200 * time.Millisecond)
+			go func() error {
+				if _, err := Queue.AddSong(*u, tempId); err != nil {
+					log.Println(err)
+					errString := err.Error()
+					response.Content = &errString
+					s.InteractionResponseEdit(i.Interaction, response)
+					return err
+				}
+				return nil
+			}()
+		}
+
+		success := fmt.Sprintf("Successfully added: %d songs", len(ids))
+		log.Println(success)
+		response.Content = &success
+		s.InteractionResponseEdit(i.Interaction, response)
+
+		if !inVC {
+			handleJoin(s, i)
+		}
+
+		if !isPlaying {
+			go Queue.PlaySong()
+		}
 	}
 }
 

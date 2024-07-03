@@ -108,7 +108,7 @@ func convertToDCA(id string) error {
 }
 
 func downloadAudio(url url.URL, id string) error {
-	cmdString := fmt.Sprintf(`yt-dlp -x "%s" --audio-quality 0 -o audio/%s`, url.String(), id)
+	cmdString := fmt.Sprintf(`yt-dlp -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`, url.String(), id)
 
 	cmd := exec.Command("sh", "-c", cmdString)
 	err := cmd.Run()

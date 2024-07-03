@@ -176,7 +176,6 @@ loop:
 	q.mu.Lock()
 	q.RemoveSong(1)
 	q.mu.Unlock()
-	os.Remove(song.audioPath)
 
 	time.Sleep(500 * time.Millisecond)
 

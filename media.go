@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -81,9 +82,15 @@ func convertToDCA(id string) error {
 
 	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
 	cmd := exec.Command("sh", "-c", cmdString)
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("error converting video to audio: %s", err)
+		return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
 	}
 
 	if err := os.Remove(audioPath); err != nil {
@@ -94,12 +101,24 @@ func convertToDCA(id string) error {
 }
 
 func downloadAudio(url url.URL, id string) error {
-	cmdString := fmt.Sprintf(`yt-dlp -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`, url.String(), id)
+
+	var cmdString string
+	if strings.Contains(url.String(), "playlist") {
+		cmdString = fmt.Sprintf(`yt-dlp -x "https://www.youtube.com/watch?v=%s" --audio-format opus --audio-quality 0 -o audio/%s`, id, id)
+	} else {
+		cmdString = fmt.Sprintf(`yt-dlp -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`, url.String(), id)
+	}
 
 	cmd := exec.Command("sh", "-c", cmdString)
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf("error converting video to audio: %s", err)
+		return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
 	}
 
 	if start := url.Query().Get("t"); start != "" {
@@ -114,9 +133,15 @@ func downloadAudio(url url.URL, id string) error {
 		cmdString := fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy audio/%s_temp.opus -y`, timeString, id, id)
 
 		cmd := exec.Command("sh", "-c", cmdString)
+
+		var out bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &out
+		cmd.Stderr = &stderr
+
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("error cutting audio: %s", err)
+			return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
 		}
 
 		cmdString = fmt.Sprintf(`mv audio/%s_temp.opus audio/%s.opus`, id, id)
@@ -180,9 +205,15 @@ func downloadAttachment(url string) (*Song, error) {
 
 	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
 	cmd := exec.Command("sh", "-c", cmdString)
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
 	err = cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf("error converting video to audio: %s", err)
+		return nil, fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
 	}
 
 	if err := os.Remove(audioPath); err != nil {

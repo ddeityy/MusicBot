@@ -86,9 +86,6 @@ func (q *SongQueue) Empty() {
 }
 
 func (q *SongQueue) GetCurrentSong() *Song {
-	if len(q.songs) == 0 {
-		return nil
-	}
 	return q.songs[0]
 }
 
@@ -199,6 +196,9 @@ func (q *SongQueue) SkipSong() {
 }
 
 func (q *SongQueue) LoadSound() error {
+	if len(q.songs) == 0 {
+		return fmt.Errorf("no songs in queue")
+	}
 	song := q.GetCurrentSong()
 	file, err := os.Open(song.audioPath)
 	if err != nil {

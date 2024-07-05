@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	URL "net/url"
@@ -183,11 +184,13 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 			return
 		}
+		var wg sync.WaitGroup
 
 		for _, id := range ids {
 			tempId := id
 			time.Sleep(200 * time.Millisecond)
 			go func() error {
+				wg.Add(1)
 				if _, err := Queue.AddSong(*u, tempId); err != nil {
 					log.Println(err)
 					errString := err.Error()
@@ -195,9 +198,11 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 					s.InteractionResponseEdit(i.Interaction, response)
 					return err
 				}
+				wg.Done()
 				return nil
 			}()
 		}
+		wg.Wait()
 
 		success := fmt.Sprintf("Successfully added: %d songs", len(ids))
 		log.Println(success)

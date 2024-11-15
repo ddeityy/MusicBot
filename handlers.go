@@ -402,9 +402,7 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	Queue.mu.Lock()
 	Queue.SkipSong()
-	Queue.mu.Unlock()
 
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,

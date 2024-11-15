@@ -357,7 +357,7 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	if !isPaused {
+	if !isPaused && isSpeaking {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{

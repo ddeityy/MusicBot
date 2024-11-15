@@ -103,6 +103,13 @@ func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	response := &discordgo.WebhookEdit{}
 
+	if len(i.ApplicationCommandData().Options) == 0 {
+		errString := "Please provide a song to add"
+		response.Content = &errString
+		s.InteractionResponseEdit(i.Interaction, response)
+		return
+	}
+
 	switch i.ApplicationCommandData().Options[0].Name {
 	case "file":
 		attachmentID := i.ApplicationCommandData().Options[0].Value.(string)
@@ -357,6 +364,16 @@ func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
+	if Queue.IsEmpty() {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("Queue is empty, use /add"),
+			},
+		})
+		return
+	}
+
 	if !isPaused && isSpeaking {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -402,12 +419,12 @@ func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	Queue.SkipSong()
-
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: fmt.Sprintf("Skipped"),
 		},
 	})
+
+	Queue.SkipSong()
 }

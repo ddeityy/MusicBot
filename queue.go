@@ -21,11 +21,10 @@ var (
 	// Channel for playback status updates
 	statusChan = make(chan bool)
 
-	skipChan = make(chan struct{})
-
 	isPaused   bool
 	isPlaying  bool
 	isSpeaking bool
+	Skip       bool
 )
 
 type SongQueue struct {
@@ -144,21 +143,33 @@ func (q *SongQueue) PlaySong() {
 	isSpeaking = true
 
 	log.Println("Playing song:", song.title)
+
 loop:
 	for _, buff := range song.buffer {
 		select {
 		case <-pauseChan:
+			if q.IsEmpty() {
+				break loop
+			}
+			if Skip {
+				Skip = false
+				break loop
+			}
 			isPlaying = false
 			isPaused = true
-			log.Println("Pausing")
 			// Wait for resume signal
 			<-resumeChan
+			log.Println("Pausing")
+			if q.IsEmpty() {
+				break loop
+			}
+			if Skip {
+				Skip = false
+				break loop
+			}
 			isPlaying = true
 			isPaused = false
 			log.Println("Resuming")
-		case <-skipChan:
-			log.Println("Skipping")
-			break loop
 		default:
 			if !isPaused {
 				isPlaying = true
@@ -175,7 +186,6 @@ loop:
 
 	// Cleanup
 	isPlaying = false
-	song.ClearBuffer()
 	q.mu.Lock()
 	q.RemoveSong(1)
 	q.mu.Unlock()
@@ -198,7 +208,15 @@ func (q *SongQueue) ResumePlayback() {
 }
 
 func (q *SongQueue) SkipSong() {
-	skipChan <- struct{}{}
+	q.PausePlayback()
+	isPlaying = false
+	isPaused = false
+	q.RemoveSong(1)
+	if q.IsEmpty() {
+		return
+	}
+	isSpeaking = false
+	q.PlaySong()
 }
 
 func (q *SongQueue) LoadSound() error {

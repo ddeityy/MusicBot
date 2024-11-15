@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/bwmarrin/discordgo"
 )
 
 var (
@@ -25,16 +23,10 @@ var (
 
 	skipChan = make(chan struct{})
 
-	isPaused  bool
-	isPlaying bool
+	isPaused   bool
+	isPlaying  bool
+	isSpeaking bool
 )
-
-type Voice struct {
-	conn      *discordgo.VoiceConnection
-	inVoice   bool
-	isPaused  bool
-	isPlaying bool
-}
 
 type SongQueue struct {
 	mu    sync.RWMutex
@@ -76,13 +68,17 @@ func (q *SongQueue) RemoveSong(index int) (string, error) {
 
 	title := q.songs[index-1].title
 
+	q.mu.Lock()
 	q.songs = append(q.songs[:index-1], q.songs[index:]...)
+	q.mu.Unlock()
 
 	return title, nil
 }
 
 func (q *SongQueue) Empty() {
+	q.mu.Lock()
 	q.songs = make([]*Song, 0, 0)
+	q.mu.Unlock()
 }
 
 func (q *SongQueue) GetCurrentSong() *Song {
@@ -116,10 +112,12 @@ func (q *SongQueue) FormatQueue() string {
 }
 
 func (q *SongQueue) Shuffle() {
+	q.mu.Lock()
 	for i := len(q.songs) - 1; i > 0; i-- {
 		j := rand.Intn(i + 1)
 		q.songs[i], q.songs[j] = q.songs[j], q.songs[i]
 	}
+	q.mu.Unlock()
 }
 
 func (q *SongQueue) IsEmpty() bool {
@@ -127,6 +125,10 @@ func (q *SongQueue) IsEmpty() bool {
 }
 
 func (q *SongQueue) PlaySong() {
+	if isSpeaking {
+		return
+	}
+
 	song := q.GetCurrentSong()
 
 	if err := q.LoadSound(); err != nil {
@@ -138,6 +140,8 @@ func (q *SongQueue) PlaySong() {
 		log.Println("Error setting voice to speaking:", err)
 		return
 	}
+
+	isSpeaking = true
 
 	log.Println("Playing song:", song.title)
 loop:
@@ -165,6 +169,8 @@ loop:
 
 	if err := VC.Speaking(false); err != nil {
 		log.Println("Error setting voice to speaking:", err)
+	} else {
+		isSpeaking = false
 	}
 
 	// Cleanup

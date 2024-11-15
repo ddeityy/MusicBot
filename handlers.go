@@ -72,6 +72,7 @@ func handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		log.Println("Error disabling voice: ", err)
 		return
 	}
+	isSpeaking = false
 
 	if err = VC.Disconnect(); err != nil {
 		log.Println("Error leaving voice channel: ", err)

@@ -1,42 +1,42 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
-	"io"
-	"log"
 	"math/rand"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
 
-var (
-	// Channels for signaling playback control
-	pauseChan  = make(chan bool)
-	resumeChan = make(chan bool)
-
-	// Channel for playback status updates
-	statusChan = make(chan bool)
-
-	isPaused   bool
-	isPlaying  bool
+type CommandHandler struct {
+	mu         sync.RWMutex
+	queue      []*Song
+	lg         *logger
+	voiceConn  *discordgo.VoiceConnection
+	inVC       bool
 	isSpeaking bool
-	Skip       bool
-)
-
-type SongQueue struct {
-	mu    sync.RWMutex
-	songs []*Song
+	skipChan   chan struct{}
+	pauseChan  chan struct{}
 }
 
-func NewSongQueue() *SongQueue {
-	return &SongQueue{songs: make([]*Song, 0, 0)}
+func NewCommandHandler(logger *logger) *CommandHandler {
+	return &CommandHandler{
+		sync.RWMutex{},
+		make([]*Song, 0, 0),
+		logger,
+		nil,
+		false,
+		false,
+		make(chan struct{}),
+		make(chan struct{}),
+	}
 }
 
-func (q *SongQueue) AddSong(url url.URL, id string) (string, error) {
+func (ch *CommandHandler) AddSong(url url.URL, id string) (string, error) {
 	title, err := GetSongTitle(id)
 	if err != nil {
 		return "", fmt.Errorf("failed to get song title: %w", err)
@@ -53,43 +53,47 @@ func (q *SongQueue) AddSong(url url.URL, id string) (string, error) {
 	}
 
 	song := NewSong(title, id, audioPath)
-	Queue.mu.Lock()
-	q.songs = append(q.songs, song)
-	Queue.mu.Unlock()
+	ch.AppendSong(song)
 
 	return title, nil
 }
 
-func (q *SongQueue) RemoveSong(index int) (string, error) {
-	if index <= 0 || index > len(q.songs) {
+func (ch *CommandHandler) RemoveSong(index int) (string, error) {
+	if index <= 0 || index > len(ch.queue) {
 		return "", fmt.Errorf("index out of range: %d", index)
 	}
 
-	title := q.songs[index-1].title
+	title := ch.queue[index-1].title
 
-	q.mu.Lock()
-	q.songs = append(q.songs[:index-1], q.songs[index:]...)
-	q.mu.Unlock()
+	ch.mu.Lock()
+	ch.queue = append(ch.queue[:index-1], ch.queue[index:]...)
+	ch.mu.Unlock()
 
 	return title, nil
 }
 
-func (q *SongQueue) Empty() {
-	q.mu.Lock()
-	q.songs = make([]*Song, 0, 0)
-	q.mu.Unlock()
+func (ch *CommandHandler) AppendSong(song *Song) {
+	ch.mu.Lock()
+	ch.queue = append(ch.queue, song)
+	ch.mu.Unlock()
 }
 
-func (q *SongQueue) GetCurrentSong() *Song {
-	return q.songs[0]
+func (ch *CommandHandler) ClearQueue() {
+	ch.mu.Lock()
+	ch.queue = make([]*Song, 0, 0)
+	ch.mu.Unlock()
 }
 
-func (q *SongQueue) GetSongQueue() []*Song {
-	return q.songs
+func (ch *CommandHandler) GetCurrentSong() *Song {
+	return ch.queue[0]
 }
 
-func (q *SongQueue) FormatQueue() string {
-	songs := q.GetSongQueue()
+func (ch *CommandHandler) GetSongQueue() []*Song {
+	return ch.queue
+}
+
+func (ch *CommandHandler) GetFormattedQueue() string {
+	songs := ch.GetSongQueue()
 
 	if len(songs) == 0 {
 		return "No songs in SongQueue"
@@ -110,149 +114,167 @@ func (q *SongQueue) FormatQueue() string {
 	return b.String()
 }
 
-func (q *SongQueue) Shuffle() {
-	q.mu.Lock()
-	for i := len(q.songs) - 1; i > 0; i-- {
+func (ch *CommandHandler) Shuffle() {
+	ch.mu.Lock()
+	for i := len(ch.queue) - 1; i > 0; i-- {
 		j := rand.Intn(i + 1)
-		q.songs[i], q.songs[j] = q.songs[j], q.songs[i]
+		ch.queue[i], ch.queue[j] = ch.queue[j], ch.queue[i]
 	}
-	q.mu.Unlock()
+	ch.mu.Unlock()
 }
 
-func (q *SongQueue) IsEmpty() bool {
-	return len(q.songs) == 0
+func (ch *CommandHandler) IsEmpty() bool {
+	ch.mu.Lock()
+	defer ch.mu.Unlock()
+	return len(ch.queue) == 0
 }
 
-func (q *SongQueue) PlaySong() {
-	if isSpeaking {
-		return
+func (ch *CommandHandler) PlaySong() error {
+	if ch.isSpeaking {
+		return fmt.Errorf("Already playing")
 	}
 
-	song := q.GetCurrentSong()
-
-	if err := q.LoadSound(); err != nil {
-		log.Println("Error loading audio file:", err)
-		return
+	if ch.IsEmpty() {
+		return fmt.Errorf("no songs in queue")
 	}
 
-	if err := VC.Speaking(true); err != nil {
-		log.Println("Error setting voice to speaking:", err)
-		return
+	song := ch.GetCurrentSong()
+
+	err := song.LoadSound()
+	if err != nil {
+		return fmt.Errorf("Error loading audio file: %w", err)
 	}
 
-	isSpeaking = true
+	err = ch.voiceConn.Speaking(true)
+	if err != nil {
+		return fmt.Errorf("Error starting speaking: %w", err)
+	}
 
-	log.Println("Playing song:", song.title)
+	ch.isSpeaking = true
+
+	ch.lg.Info("Playing song: %s", song.title)
 
 loop:
 	for _, buff := range song.buffer {
 		select {
-		case <-pauseChan:
-			if q.IsEmpty() {
+		case <-ch.skipChan:
+			break loop
+		case <-ch.pauseChan:
+			ch.isSpeaking = false
+		inner:
+			select {
+			case <-ch.pauseChan:
+				ch.isSpeaking = true
+				break inner
+			case <-ch.skipChan:
 				break loop
 			}
-			if Skip {
-				Skip = false
-				break loop
-			}
-			isPlaying = false
-			isPaused = true
-			// Wait for resume signal
-			<-resumeChan
-			log.Println("Pausing")
-			if q.IsEmpty() {
-				break loop
-			}
-			if Skip {
-				Skip = false
-				break loop
-			}
-			isPlaying = true
-			isPaused = false
-			log.Println("Resuming")
 		default:
-			if !isPaused {
-				isPlaying = true
-				VC.OpusSend <- buff
+			if ch.voiceConn != nil && ch.isSpeaking {
+				ch.voiceConn.OpusSend <- buff
 			}
 		}
 	}
 
-	if err := VC.Speaking(false); err != nil {
-		log.Println("Error setting voice to speaking:", err)
-	} else {
-		isSpeaking = false
+	err = ch.voiceConn.Speaking(false)
+	if err != nil {
+		return fmt.Errorf("Error setting voice to speaking: %w", err)
 	}
 
-	// Cleanup
-	isPlaying = false
-	q.mu.Lock()
-	q.RemoveSong(1)
-	q.mu.Unlock()
+	ch.isSpeaking = false
+
+	ch.RemoveSong(1)
 
 	time.Sleep(500 * time.Millisecond)
 
-	if q.IsEmpty() {
-		return
+	if ch.IsEmpty() {
+		return nil
 	}
 
-	q.PlaySong()
+	go ch.PlaySong()
+
+	return nil
 }
 
-func (q *SongQueue) PausePlayback() {
-	pauseChan <- true
+func (ch *CommandHandler) PausePlayback() {
+	ch.pauseChan <- struct{}{}
 }
 
-func (q *SongQueue) ResumePlayback() {
-	resumeChan <- true
+func (ch *CommandHandler) ResumePlayback() {
+	ch.pauseChan <- struct{}{}
 }
 
-func (q *SongQueue) SkipSong() {
-	q.PausePlayback()
-	isPlaying = false
-	isPaused = false
-	q.RemoveSong(1)
-	if q.IsEmpty() {
-		return
-	}
-	isSpeaking = false
-	q.PlaySong()
+func (ch *CommandHandler) SkipSong() {
+	ch.skipChan <- struct{}{}
 }
 
-func (q *SongQueue) LoadSound() error {
-	if len(q.songs) == 0 {
-		return fmt.Errorf("no songs in queue")
-	}
-	song := q.GetCurrentSong()
-	file, err := os.Open(song.audioPath)
+func (ch *CommandHandler) HandleFileAttachment(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	attachmentID := i.ApplicationCommandData().Options[0].Value.(string)
+	attachmentURL := i.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
+	attachmentName := i.ApplicationCommandData().Resolved.Attachments[attachmentID].Filename
+
+	ch.lg.Info("Downloading attachment: %s", attachmentName)
+
+	song, err := downloadAttachment(attachmentURL)
 	if err != nil {
-		return fmt.Errorf("error opening file: %w", err)
+		return fmt.Errorf("Error downloading attachment: %w", err)
 	}
 
-	var opuslen int16
+	ch.AppendSong(song)
 
-	for {
-		err = binary.Read(file, binary.LittleEndian, &opuslen)
+	ch.Success(s, i, "Added to queue")
+	ch.lg.Info("Added song to queue: %s", song.title)
 
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			err := file.Close()
-			if err != nil {
-				return fmt.Errorf("error closing file: %w", err)
+	return nil
+}
+
+func (ch *CommandHandler) HandleYouTubeURL(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	songURL := i.ApplicationCommandData().Options[0].StringValue()
+	u, err := url.Parse(songURL)
+	if err != nil {
+		return fmt.Errorf("Error parsing URL: %w", err)
+	}
+
+	if !IsYouTubeURL(u) {
+		return fmt.Errorf("invalid YT link: %s", songURL)
+	}
+
+	ids, err := GetSongID(*u)
+	if err != nil {
+		return fmt.Errorf("Error getting song ID: %w", err)
+	}
+
+	if len(ids) == 1 {
+		title, err := ch.AddSong(*u, ids[0])
+		if err != nil {
+			return fmt.Errorf("Error adding song: %w", err)
+		}
+
+		ch.lg.Info("Successfully added: %s", title)
+
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for _, id := range ids {
+		wg.Add(1)
+
+		time.Sleep(200 * time.Millisecond)
+
+		go func() {
+			if _, err := ch.AddSong(*u, id); err != nil {
+				ch.lg.Error("Error adding song: ", err)
 			}
-			return nil
-		}
 
-		if err != nil {
-			return fmt.Errorf("Error reading file: %w", err)
-		}
+			ch.lg.Info("Added song: %s", id)
 
-		InBuf := make([]byte, opuslen)
-		err = binary.Read(file, binary.LittleEndian, &InBuf)
-
-		if err != nil {
-			return fmt.Errorf("Error reading file: %w", err)
-		}
-
-		song.buffer = append(song.buffer, InBuf)
+			wg.Done()
+		}()
 	}
+	wg.Wait()
+
+	ch.lg.Info("Successfully added: %d songs", len(ids))
+
+	return nil
 }

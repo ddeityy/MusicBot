@@ -2,429 +2,230 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"sync"
-	"time"
-
-	URL "net/url"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-var VC *discordgo.VoiceConnection
-var inVC bool
-
-var Handlers = map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
-	"join":    handleJoin,
-	"leave":   handleLeave,
-	"add":     handleAdd,
-	"remove":  handleRemove,
-	"pause":   handlePauseResume,
-	"play":    handlePlay,
-	"queue":   handleQueue,
-	"shuffle": handleShuffle,
-	"skip":    handleSkip,
-	"clear":   handleClear,
-}
-
 var titleChan = make(chan string, 0)
 var idChan = make(chan string, 0)
 
-func handleJoin(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleJoin: "
+
 	c, err := s.State.Channel(i.ChannelID)
 	if err != nil {
-		log.Println("Error getting channel state: ", err)
+		ch.lg.Error(op+"Error getting channel state: ", err)
+		ch.Error(s, i, fmt.Errorf("Error getting channel state: %w", err))
 		return
 	}
 
-	// Find the guild for that channel.
 	g, err := s.State.Guild(c.GuildID)
 	if err != nil {
-		log.Println("Error getting guild state: ", err)
+		ch.lg.Error(op+"Error getting guild state: ", err)
+		ch.Error(s, i, fmt.Errorf("Error getting guild state: %w", err))
 		return
 	}
 
 	for _, vs := range g.VoiceStates {
 		if vs.UserID == i.Member.User.ID {
-			VC, err = s.ChannelVoiceJoin(GUILD, vs.ChannelID, false, false)
+			ch.voiceConn, err = s.ChannelVoiceJoin(GUILD, vs.ChannelID, false, false)
 			if err != nil {
-				log.Println("Error joining voice channel: ", err)
+				ch.lg.Error(op+"Error joining voice channel: ", err)
+				ch.Error(s, i, fmt.Errorf("Error joining voice channel: %w", err))
 				return
 			}
-			inVC = true
 		}
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintln("Joined!"),
-		},
-	})
+	ch.Success(s, i, "Joined")
 
-	log.Println("Joined voice channel")
+	ch.lg.Info("Joined voice channel")
 }
 
-func handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	err := VC.Speaking(false)
+func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleLeave: "
+
+	err := ch.voiceConn.Speaking(false)
 	if err != nil {
-		log.Println("Error disabling voice: ", err)
-		return
-	}
-	isSpeaking = false
-
-	if err = VC.Disconnect(); err != nil {
-		log.Println("Error leaving voice channel: ", err)
+		ch.lg.Error(op+"Error disabling voice: ", err)
+		ch.Error(s, i, fmt.Errorf("Error disabling voice: %w", err))
 		return
 	}
 
-	inVC = false
+	ch.isSpeaking = false
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintln("Left!"),
-		},
-	})
+	if err = ch.voiceConn.Disconnect(); err != nil {
+		ch.lg.Error(op+"Error leaving voice channel: ", err)
+		ch.Error(s, i, fmt.Errorf("Error leaving voice channel: %w", err))
+		return
+	}
 
-	log.Println("Left voice channel")
+	ch.Success(s, i, "Left")
+
+	ch.lg.Info("Left voice channel")
 }
 
-func handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleAdd: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
-
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}})
-
-	response := &discordgo.WebhookEdit{}
 
 	if len(i.ApplicationCommandData().Options) == 0 {
-		errString := "Please provide a song to add"
-		response.Content = &errString
-		s.InteractionResponseEdit(i.Interaction, response)
+		ch.lg.Error(op + "No options provided")
+		ch.Error(s, i, fmt.Errorf("no options provided"))
 		return
 	}
 
 	switch i.ApplicationCommandData().Options[0].Name {
 	case "file":
-		attachmentID := i.ApplicationCommandData().Options[0].Value.(string)
-		attachmentUrl := i.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
-		song, err := downloadAttachment(attachmentUrl)
+		err := ch.HandleFileAttachment(s, i)
 		if err != nil {
-			log.Println(err)
-			errString := err.Error()
-			response.Content = &errString
-			s.InteractionResponseEdit(i.Interaction, response)
+			ch.lg.Error(op+"Error downloading attachment: ", err)
+			ch.Error(s, i, fmt.Errorf("Error downloading attachment: %w", err))
 			return
 		}
-		Queue.mu.Lock()
-		Queue.songs = append(Queue.songs, song)
-		Queue.mu.Unlock()
-
-		success := fmt.Sprintf("Successfully added: %s", song.title)
-		log.Println(success)
-		response.Content = &success
-		s.InteractionResponseEdit(i.Interaction, response)
-
-		if !inVC {
-			handleJoin(s, i)
-		}
-
-		if !isPlaying && !isPaused {
-			go Queue.PlaySong()
-		}
-
-		return
 	case "url":
-		url := i.ApplicationCommandData().Options[0].StringValue()
-		u, err := URL.Parse(url)
+		err := ch.HandleYouTubeURL(s, i)
 		if err != nil {
-			log.Println(err)
-			errString := err.Error()
-			response.Content = &errString
-			s.InteractionResponseEdit(i.Interaction, response)
+			ch.lg.Error(op+"Error adding song: ", err)
+			ch.Error(s, i, fmt.Errorf("Error adding song: %w", err))
 			return
-		}
-
-		if !IsYouTubeURL(u) {
-			log.Println(err)
-			errString := "invalid YT link"
-			response.Content = &errString
-			s.InteractionResponseEdit(i.Interaction, response)
-			return
-		}
-
-		ids, err := GetSongID(*u)
-		if err != nil {
-			log.Println(err)
-			errString := err.Error()
-			response.Content = &errString
-			s.InteractionResponseEdit(i.Interaction, response)
-			return
-		}
-
-		if len(ids) == 1 {
-			var title string
-			if title, err = Queue.AddSong(*u, ids[0]); err != nil {
-				log.Println(err)
-				errString := err.Error()
-				response.Content = &errString
-				s.InteractionResponseEdit(i.Interaction, response)
-				return
-			}
-			success := fmt.Sprintf("Successfully added: %s", title)
-			log.Println(success)
-			response.Content = &success
-			s.InteractionResponseEdit(i.Interaction, response)
-
-			if !inVC {
-				handleJoin(s, i)
-			}
-
-			if !isPlaying && !isPaused {
-				go Queue.PlaySong()
-			}
-
-			return
-		}
-		var wg sync.WaitGroup
-
-		for _, id := range ids {
-			tempId := id
-			time.Sleep(200 * time.Millisecond)
-			go func() error {
-				wg.Add(1)
-				if _, err := Queue.AddSong(*u, tempId); err != nil {
-					log.Println(err)
-					errString := err.Error()
-					response.Content = &errString
-					s.InteractionResponseEdit(i.Interaction, response)
-					return err
-				}
-				wg.Done()
-				return nil
-			}()
-		}
-		wg.Wait()
-
-		success := fmt.Sprintf("Successfully added: %d songs", len(ids))
-		log.Println(success)
-		response.Content = &success
-		s.InteractionResponseEdit(i.Interaction, response)
-
-		if !inVC {
-			handleJoin(s, i)
-		}
-
-		if !isPlaying && !isPaused {
-			go Queue.PlaySong()
 		}
 	}
+
+	ch.Success(s, i, "Added to queue")
+
+	if ch.voiceConn == nil {
+		ch.handleJoin(s, i)
+	}
+
+	go ch.PlaySong()
 }
 
-func handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleRemove: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
 	index := int(i.ApplicationCommandData().Options[0].IntValue())
 
-	title, err := Queue.RemoveSong(index)
+	title, err := ch.RemoveSong(index)
 	if err != nil {
-		log.Println("Error removing song from queue: ", err)
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Flags:   discordgo.MessageFlagsEphemeral,
-				Content: fmt.Sprintf("Error removing song from queue: %s", err),
-			},
-		})
+		ch.lg.Error(op+"Error removing song from queue: ", err)
+		ch.Error(s, i, fmt.Errorf("Error removing song from queue: %w", err))
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintf("Successfully removed: %s", title),
-		},
-	})
-
-	log.Println("Successfully removed: ", title)
+	ch.Success(s, i, "Removed from queue")
+	ch.lg.Info("Successfully removed: %s", title)
 }
 
-func handleQueue(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleQueue(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleQueue: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: Queue.FormatQueue(),
-		},
-	})
+	ch.Success(s, i, ch.GetFormattedQueue())
+	ch.lg.Info("Successfully sent queue")
 }
 
-func handleShuffle(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleShuffle(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleShuffle: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
-	Queue.mu.Lock()
-	Queue.Shuffle()
-	Queue.mu.Unlock()
+	ch.mu.Lock()
+	ch.Shuffle()
+	ch.mu.Unlock()
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintf("Successfully shuffled! New queue:\n%s", Queue.FormatQueue()),
-		},
-	})
+	ch.Success(s, i, "Shuffled")
+	ch.lg.Info("Successfully shuffled queue")
 }
 
-func handleClear(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleClear(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleClear: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
-	Queue.mu.Lock()
-	Queue.Empty()
-	Queue.mu.Unlock()
+	ch.ClearQueue()
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:   discordgo.MessageFlagsEphemeral,
-			Content: fmt.Sprintln("Successfully cleared!"),
-		},
-	})
+	ch.Success(s, i, "Cleared queue")
+	ch.lg.Info("Successfully cleared queue")
 }
 
-func handlePlay(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handlePauseResume: "
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
-	if isPlaying {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Already playing"),
-			},
-		})
+	if ch.voiceConn == nil {
+		ch.lg.Error(op + "Not in voice channel")
+		ch.Error(s, i, fmt.Errorf("Not in voice channel"))
 		return
 	}
 
-	if Queue.IsEmpty() {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Queue is empty, use /add"),
-			},
-		})
+	if ch.IsEmpty() {
+		ch.lg.Error(op + "Queue is empty")
+		ch.Error(s, i, fmt.Errorf("Queue is empty"))
 		return
 	}
 
-	Queue.mu.Lock()
-	song := Queue.GetCurrentSong()
-	Queue.mu.Unlock()
-
-	if !inVC {
-		handleJoin(s, i)
+	if ch.isSpeaking {
+		ch.PausePlayback()
+		ch.lg.Info("Paused playback")
+		ch.Success(s, i, "Paused playback")
+	} else {
+		ch.ResumePlayback()
+		ch.lg.Info("Resumed playback")
+		ch.Success(s, i, "Resumed playback")
 	}
-
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Playing %s", song.title),
-		},
-	})
-
-	go Queue.PlaySong()
 }
 
-func handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (ch *CommandHandler) handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	const op string = "handleSkip: "
+
 	if i.Type != discordgo.InteractionApplicationCommand {
+		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
+		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
-	if !inVC {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Not in voice chat, use /join or /play"),
-			},
-		})
+	if ch.voiceConn == nil {
+		ch.lg.Error(op + "Not in voice channel")
+		ch.Error(s, i, fmt.Errorf("Not in voice channel"))
 		return
 	}
 
-	if Queue.IsEmpty() {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Queue is empty, use /add"),
-			},
-		})
+	if ch.IsEmpty() {
+		ch.lg.Error(op + "Queue is empty")
+		ch.Error(s, i, fmt.Errorf("Queue is empty"))
 		return
 	}
 
-	if !isPaused && isSpeaking {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Pausing"),
-			},
-		})
-		Queue.PausePlayback()
-		return
-	}
+	ch.SkipSong()
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Resuming"),
-		},
-	})
-	Queue.ResumePlayback()
-}
-
-func handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
-		return
-	}
-
-	if !inVC {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Not in voice chat, use /join"),
-			},
-		})
-		return
-	}
-
-	if Queue.IsEmpty() {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Queue is empty, use /add"),
-			},
-		})
-		return
-	}
-
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Skipped"),
-		},
-	})
-
-	Queue.SkipSong()
+	ch.Success(s, i, "Skipped")
+	ch.lg.Info("Successfully skipped song")
 }

@@ -19,7 +19,7 @@ Flags:
 * Pause and unpause with the same command (/pause)
 * Display current song queue (/queue)
 * --cookies support for yt-dlp for age restricted videos
- * put cookies.txt in the same directory as the bot
+  * put cookies.txt in the same directory as the bot
 * Queue manipulation:
   * Skip (/skip)
   * Clear (/clear)

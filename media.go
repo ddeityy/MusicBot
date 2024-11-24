@@ -80,7 +80,7 @@ func convertToDCA(id string) error {
 	audioPath := fmt.Sprintf("audio/%s.opus", id)
 	DCAPath := fmt.Sprintf("audio/%s.dca", id)
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | dca > %s", audioPath, DCAPath)
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 
 	var out bytes.Buffer
@@ -203,7 +203,7 @@ func downloadAttachment(url string) (*Song, error) {
 		return nil, fmt.Errorf("error copying file: %w", err)
 	}
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | dca > %s", audioPath, DCAPath)
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 
 	var out bytes.Buffer

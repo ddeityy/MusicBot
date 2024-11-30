@@ -6,9 +6,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var titleChan = make(chan string, 0)
-var idChan = make(chan string, 0)
-
 func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleJoin: "
 
@@ -68,6 +65,8 @@ func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.Interac
 func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleAdd: "
 
+	ch.Wait(s, i)
+
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
 		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
@@ -97,7 +96,7 @@ func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.Interacti
 		}
 	}
 
-	ch.Success(s, i, "Added to queue")
+	ch.WaitSuccess(s, i, "Added to queue")
 
 	if ch.voiceConn == nil {
 		ch.handleJoin(s, i)
@@ -149,9 +148,7 @@ func (ch *CommandHandler) handleShuffle(s *discordgo.Session, i *discordgo.Inter
 		return
 	}
 
-	ch.mu.Lock()
 	ch.Shuffle()
-	ch.mu.Unlock()
 
 	ch.Success(s, i, "Shuffled")
 	ch.lg.Info("Successfully shuffled queue")
@@ -174,6 +171,9 @@ func (ch *CommandHandler) handleClear(s *discordgo.Session, i *discordgo.Interac
 
 func (ch *CommandHandler) handlePauseResume(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handlePauseResume: "
+
+	ch.Wait(s, i)
+
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
 		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
@@ -195,16 +195,18 @@ func (ch *CommandHandler) handlePauseResume(s *discordgo.Session, i *discordgo.I
 	if ch.isSpeaking {
 		ch.PausePlayback()
 		ch.lg.Info("Paused playback")
-		ch.Success(s, i, "Paused playback")
+		ch.WaitSuccess(s, i, "Paused playback")
 	} else {
 		ch.ResumePlayback()
 		ch.lg.Info("Resumed playback")
-		ch.Success(s, i, "Resumed playback")
+		ch.WaitSuccess(s, i, "Resumed playback")
 	}
 }
 
 func (ch *CommandHandler) handleSkip(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleSkip: "
+
+	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
@@ -226,6 +228,6 @@ func (ch *CommandHandler) handleSkip(s *discordgo.Session, i *discordgo.Interact
 
 	ch.SkipSong()
 
-	ch.Success(s, i, "Skipped")
+	ch.WaitSuccess(s, i, "Skipped")
 	ch.lg.Info("Successfully skipped song")
 }

@@ -34,6 +34,8 @@ func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.Interact
 		}
 	}
 
+	ch.inVC = true
+
 	ch.Success(s, i, "Joined")
 
 	ch.lg.Info("Joined voice channel")
@@ -56,6 +58,8 @@ func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.Interac
 		ch.Error(s, i, fmt.Errorf("Error leaving voice channel: %w", err))
 		return
 	}
+
+	ch.inVC = false
 
 	ch.Success(s, i, "Left")
 
@@ -98,7 +102,7 @@ func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.Interacti
 
 	ch.WaitSuccess(s, i, "Added to queue")
 
-	if ch.voiceConn == nil {
+	if ch.voiceConn == nil && ch.inVC == false {
 		ch.handleJoin(s, i)
 	}
 

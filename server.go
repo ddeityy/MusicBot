@@ -10,7 +10,10 @@ import (
 func RunServer() {
 	http.HandleFunc("/", handleCookies)
 	log.Println("Server listening on port 8080...")
-	http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal("Error starting server: ", err)
+	}
 }
 
 func handleCookies(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +32,7 @@ func handleCookies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.Remove("./cookies.txt"); err != nil {
+	if err = os.Remove("./cookies.txt"); err != nil {
 		log.Println("Error deleting old cookies.txt: ", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}

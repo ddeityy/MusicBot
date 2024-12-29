@@ -8,27 +8,40 @@ func (ch *CommandHandler) Error(s *discordgo.Session, i *discordgo.InteractionCr
 	response := &discordgo.WebhookEdit{}
 	e := err.Error()
 	response.Content = &e
-	s.InteractionResponseEdit(i.Interaction, response)
+	_, err = s.InteractionResponseEdit(i.Interaction, response)
+	if err != nil {
+		ch.lg.Error("Error editing interaction: ", err)
+	}
 }
 
 func (ch *CommandHandler) Success(s *discordgo.Session, i *discordgo.InteractionCreate, msg string) {
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Flags:   discordgo.MessageFlagsEphemeral,
 			Content: msg,
 		},
 	})
+	if err != nil {
+		ch.lg.Error("Error responding to interaction: ", err)
+	}
 }
 
 func (ch *CommandHandler) WaitSuccess(s *discordgo.Session, i *discordgo.InteractionCreate, msg string) {
 	response := &discordgo.WebhookEdit{}
 	response.Content = &msg
-	s.InteractionResponseEdit(i.Interaction, response)
+	_, err := s.InteractionResponseEdit(i.Interaction, response)
+	if err != nil {
+		ch.lg.Error("Error editing interaction: ", err)
+	}
 }
 
 func (ch *CommandHandler) Wait(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}})
+		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral}},
+	)
+	if err != nil {
+		ch.lg.Error("Error responding to interaction: ", err)
+	}
 }

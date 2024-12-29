@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,16 +27,17 @@ func GetSongID(u url.URL) ([]string, error) {
 	var err error
 	var ids []string
 
-	if strings.Contains(u.Path, "/playlist") { // playlist yt link
+	switch {
+	case strings.Contains(u.Path, "/playlist"): // playlist yt link
 		ids, err = parsePlaylist(u)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error parsing playlist: %w", err)
 		}
-	} else if strings.Contains(u.Path, "/watch") { // normal yt link
+	case strings.Contains(u.Path, "/watch"): // normal yt link
 		ids = append(ids, u.Query().Get("v"))
-	} else if strings.Contains(u.Path, "/shorts/") { // shorts yt link
+	case strings.Contains(u.Path, "/shorts/"): // shorts yt link
 		ids = append(ids, strings.Split(u.Path, "/shorts/")[1])
-	} else { // shorten yt link
+	default: // shorten yt link
 		ids = append(ids, u.Path)
 	}
 
@@ -78,9 +80,9 @@ func DownloadSong(url url.URL, id string) (string, error) {
 
 func convertToDCA(id string) error {
 	audioPath := fmt.Sprintf("audio/%s.opus", id)
-	DCAPath := fmt.Sprintf("audio/%s.dca", id)
+	dacPath := fmt.Sprintf("audio/%s.dca", id)
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, dacPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 
 	var out bytes.Buffer
@@ -90,23 +92,28 @@ func convertToDCA(id string) error {
 
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
+		return errors.New(err.Error() + ": " + stderr.String())
 	}
 
-	if err := os.Remove(audioPath); err != nil {
-		return fmt.Errorf("error removing audio file: %s", err)
+	if err = os.Remove(audioPath); err != nil {
+		return fmt.Errorf("error removing audio file: %w", err)
 	}
 
 	return nil
 }
 
 func downloadAudio(url url.URL, id string) error {
-
 	var cmdString string
 	if strings.Contains(url.String(), "playlist") {
-		cmdString = fmt.Sprintf(`yt-dlp --cookies cookies.txt -x "https://www.youtube.com/watch?v=%s" --audio-format opus --audio-quality 0 -o audio/%s`, id, id)
+		cmdString = fmt.Sprintf(
+			`yt-dlp --cookies cookies.txt -x "https://www.youtube.com/watch?v=%s" --audio-format opus --audio-quality 0 -o audio/%s`,
+			id, id,
+		)
 	} else {
-		cmdString = fmt.Sprintf(`yt-dlp --cookies cookies.txt -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`, url.String(), id)
+		cmdString = fmt.Sprintf(
+			`yt-dlp --cookies cookies.txt -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`,
+			url.String(), id,
+		)
 	}
 
 	cmd := exec.Command("sh", "-c", cmdString)
@@ -118,30 +125,29 @@ func downloadAudio(url url.URL, id string) error {
 
 	err := cmd.Run()
 	if err != nil {
-		return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
+		return errors.New(fmt.Sprint(err) + ": " + stderr.String())
 	}
 
 	if start := url.Query().Get("t"); start != "" {
-		seconds, err := strconv.Atoi(start)
+		var seconds int
+		seconds, err = strconv.Atoi(start)
 		if err != nil {
-			return fmt.Errorf("error parsing start time: %s", err)
+			return fmt.Errorf("error parsing start time: %w", err)
 		}
 
 		parsedTime := time.Unix(0, (time.Duration(seconds) * time.Second).Nanoseconds())
 		timeString := strings.Split(parsedTime.String(), " ")[1]
 
-		cmdString := fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy audio/%s_temp.opus -y`, timeString, id, id)
+		cmdString = fmt.Sprintf(`ffmpeg -ss %s -i audio/%s.opus -c copy audio/%s_temp.opus -y`, timeString, id, id)
 
-		cmd := exec.Command("sh", "-c", cmdString)
+		cmd = exec.Command("sh", "-c", cmdString)
 
-		var out bytes.Buffer
-		var stderr bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &stderr
 
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
+			return errors.New(fmt.Sprint(err) + ": " + stderr.String())
 		}
 
 		cmdString = fmt.Sprintf(`mv audio/%s_temp.opus audio/%s.opus`, id, id)
@@ -149,7 +155,7 @@ func downloadAudio(url url.URL, id string) error {
 		cmd = exec.Command("sh", "-c", cmdString)
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("error cutting audio: %s", err)
+			return fmt.Errorf("error cutting audio: %w", err)
 		}
 	}
 	return nil
@@ -181,16 +187,22 @@ func parsePlaylist(u url.URL) ([]string, error) {
 }
 
 func downloadAttachment(url string) (*Song, error) {
-	res, err := http.DefaultClient.Get(url)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error downloading attachment: %w", err)
 	}
 	defer res.Body.Close()
+
 	urlSegments := strings.Split(res.Request.URL.Path, "/")
 	fileName := strings.Split(urlSegments[len(urlSegments)-1], "?")[0]
 	title := strings.Split(fileName, ".")[0]
 	audioPath := fmt.Sprintf("audio/%s", fileName)
-	DCAPath := strings.Split(audioPath, ".")[0] + ".dca"
+	dcaPath := strings.Split(audioPath, ".")[0] + ".dca"
 
 	file, err := os.Create(audioPath)
 	if err != nil {
@@ -203,7 +215,7 @@ func downloadAttachment(url string) (*Song, error) {
 		return nil, fmt.Errorf("error copying file: %w", err)
 	}
 
-	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, DCAPath)
+	cmdString := fmt.Sprintf("ffmpeg -i %s -f s16le -ar 48000 -ac 2 pipe:1 | ./dca > %s", audioPath, dcaPath)
 	cmd := exec.Command("sh", "-c", cmdString)
 
 	var out bytes.Buffer
@@ -213,14 +225,14 @@ func downloadAttachment(url string) (*Song, error) {
 
 	err = cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprint(err) + ": " + stderr.String())
+		return nil, errors.New(fmt.Sprint(err) + ": " + stderr.String())
 	}
 
-	if err := os.Remove(audioPath); err != nil {
-		return nil, fmt.Errorf("error removing audio file: %s", err)
+	if err = os.Remove(audioPath); err != nil {
+		return nil, fmt.Errorf("error removing audio file: %w", err)
 	}
 
-	song := NewSong(title, "", DCAPath)
+	song := NewSong(title, "", dcaPath)
 
 	return song, nil
 }

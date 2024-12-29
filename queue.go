@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -26,7 +27,7 @@ type CommandHandler struct {
 func NewCommandHandler(logger *logger) *CommandHandler {
 	return &CommandHandler{
 		sync.RWMutex{},
-		make([]*Song, 0, 0),
+		make([]*Song, 0),
 		logger,
 		nil,
 		false,
@@ -80,7 +81,7 @@ func (ch *CommandHandler) AppendSong(song *Song) {
 
 func (ch *CommandHandler) ClearQueue() {
 	ch.mu.Lock()
-	ch.queue = make([]*Song, 0, 0)
+	ch.queue = make([]*Song, 0)
 	ch.mu.Unlock()
 }
 
@@ -129,25 +130,29 @@ func (ch *CommandHandler) IsEmpty() bool {
 	return len(ch.queue) == 0
 }
 
-func (ch *CommandHandler) PlaySong() error {
+func (ch *CommandHandler) PlaySong() {
 	if ch.isSpeaking {
-		return fmt.Errorf("Already playing")
+		ch.lg.Error("Already playing")
+		return
 	}
 
 	if ch.IsEmpty() {
-		return fmt.Errorf("no songs in queue")
+		ch.lg.Error("no songs in queue")
+		return
 	}
 
 	song := ch.GetCurrentSong()
 
 	err := song.LoadSound()
 	if err != nil {
-		return fmt.Errorf("Error loading audio file: %w", err)
+		ch.lg.Error("Error loading audio file: %w", err)
+		return
 	}
 
 	err = ch.voiceConn.Speaking(true)
 	if err != nil {
-		return fmt.Errorf("Error starting speaking: %w", err)
+		ch.lg.Error("Error starting speaking: %w", err)
+		return
 	}
 
 	ch.isSpeaking = true
@@ -178,22 +183,25 @@ loop:
 
 	err = ch.voiceConn.Speaking(false)
 	if err != nil {
-		return fmt.Errorf("Error setting voice to speaking: %w", err)
+		ch.lg.Error("Error setting voice to speaking: %w", err)
+		return
 	}
 
 	ch.isSpeaking = false
 
-	ch.RemoveSong(1)
+	_, err = ch.RemoveSong(1)
+	if err != nil {
+		ch.lg.Error("Error removing song: %w", err)
+		return
+	}
 
 	time.Sleep(500 * time.Millisecond)
 
 	if ch.IsEmpty() {
-		return nil
+		return
 	}
 
 	go ch.PlaySong()
-
-	return nil
 }
 
 func (ch *CommandHandler) PausePlayback() {
@@ -209,7 +217,11 @@ func (ch *CommandHandler) SkipSong() {
 }
 
 func (ch *CommandHandler) HandleFileAttachment(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	attachmentID := i.ApplicationCommandData().Options[0].Value.(string)
+	if len(i.ApplicationCommandData().Options) == 0 {
+		return errors.New("no options provided")
+	}
+
+	attachmentID, _ := i.ApplicationCommandData().Options[0].Value.(string)
 	attachmentURL := i.ApplicationCommandData().Resolved.Attachments[attachmentID].URL
 	attachmentName := i.ApplicationCommandData().Resolved.Attachments[attachmentID].Filename
 
@@ -228,7 +240,7 @@ func (ch *CommandHandler) HandleFileAttachment(s *discordgo.Session, i *discordg
 	return nil
 }
 
-func (ch *CommandHandler) HandleYouTubeURL(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+func (ch *CommandHandler) HandleYouTubeURL(_ *discordgo.Session, i *discordgo.InteractionCreate) error {
 	songURL := i.ApplicationCommandData().Options[0].StringValue()
 	u, err := url.Parse(songURL)
 	if err != nil {
@@ -245,7 +257,9 @@ func (ch *CommandHandler) HandleYouTubeURL(s *discordgo.Session, i *discordgo.In
 	}
 
 	if len(ids) == 1 {
-		title, err := ch.AddSong(*u, ids[0])
+		var title string
+
+		title, err = ch.AddSong(*u, ids[0])
 		if err != nil {
 			return fmt.Errorf("Error adding song: %w", err)
 		}
@@ -263,7 +277,7 @@ func (ch *CommandHandler) HandleYouTubeURL(s *discordgo.Session, i *discordgo.In
 		time.Sleep(200 * time.Millisecond)
 
 		go func() {
-			if _, err := ch.AddSong(*u, id); err != nil {
+			if _, err = ch.AddSong(*u, id); err != nil {
 				ch.lg.Error("Error adding song: ", err)
 			}
 

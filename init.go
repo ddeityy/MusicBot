@@ -13,7 +13,10 @@ var (
 )
 
 func init() {
-	os.MkdirAll("./audio", 0755)
+	err := os.MkdirAll("./audio", 0755)
+	if err != nil {
+		panic(err)
+	}
 
 	tokenFlag := flag.String("token", "", "Your Discord bot token")
 	guildFlag := flag.String("guild", "", "Guild ID where the bot operates")

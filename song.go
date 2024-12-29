@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,8 +31,8 @@ func (s *Song) LoadSound() error {
 	for {
 		err = binary.Read(file, binary.LittleEndian, &opuslen)
 
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			err := file.Close()
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			err = file.Close()
 			if err != nil {
 				return fmt.Errorf("error closing file: %w", err)
 			}
@@ -42,13 +43,13 @@ func (s *Song) LoadSound() error {
 			return fmt.Errorf("Error reading file: %w", err)
 		}
 
-		InBuf := make([]byte, opuslen)
-		err = binary.Read(file, binary.LittleEndian, &InBuf)
+		inBuf := make([]byte, opuslen)
+		err = binary.Read(file, binary.LittleEndian, &inBuf)
 
 		if err != nil {
 			return fmt.Errorf("Error reading file: %w", err)
 		}
 
-		s.buffer = append(s.buffer, InBuf)
+		s.buffer = append(s.buffer, inBuf)
 	}
 }

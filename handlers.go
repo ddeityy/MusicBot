@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
@@ -73,13 +74,13 @@ func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.Interacti
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
 	if len(i.ApplicationCommandData().Options) == 0 {
 		ch.lg.Error(op + "No options provided")
-		ch.Error(s, i, fmt.Errorf("no options provided"))
+		ch.Error(s, i, errors.New("no options provided"))
 		return
 	}
 
@@ -102,7 +103,7 @@ func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.Interacti
 
 	ch.WaitSuccess(s, i, "Added to queue")
 
-	if ch.voiceConn == nil && ch.inVC == false {
+	if ch.voiceConn == nil && !ch.inVC {
 		ch.handleJoin(s, i)
 	}
 
@@ -114,7 +115,7 @@ func (ch *CommandHandler) handleRemove(s *discordgo.Session, i *discordgo.Intera
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
@@ -135,7 +136,7 @@ func (ch *CommandHandler) handleQueue(s *discordgo.Session, i *discordgo.Interac
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
@@ -148,7 +149,7 @@ func (ch *CommandHandler) handleShuffle(s *discordgo.Session, i *discordgo.Inter
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
@@ -163,7 +164,7 @@ func (ch *CommandHandler) handleClear(s *discordgo.Session, i *discordgo.Interac
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
@@ -180,19 +181,19 @@ func (ch *CommandHandler) handlePauseResume(s *discordgo.Session, i *discordgo.I
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
 	if ch.voiceConn == nil {
 		ch.lg.Error(op + "Not in voice channel")
-		ch.Error(s, i, fmt.Errorf("Not in voice channel"))
+		ch.Error(s, i, errors.New("not in voice channel"))
 		return
 	}
 
 	if ch.IsEmpty() {
 		ch.lg.Error(op + "Queue is empty")
-		ch.Error(s, i, fmt.Errorf("Queue is empty"))
+		ch.Error(s, i, errors.New("queue is empty"))
 		return
 	}
 
@@ -214,19 +215,19 @@ func (ch *CommandHandler) handleSkip(s *discordgo.Session, i *discordgo.Interact
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
-		ch.Error(s, i, fmt.Errorf("Invalid interaction type: %s", i.Type.String()))
+		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
 		return
 	}
 
 	if ch.voiceConn == nil {
 		ch.lg.Error(op + "Not in voice channel")
-		ch.Error(s, i, fmt.Errorf("Not in voice channel"))
+		ch.Error(s, i, errors.New("not in voice channel"))
 		return
 	}
 
 	if ch.IsEmpty() {
 		ch.lg.Error(op + "Queue is empty")
-		ch.Error(s, i, fmt.Errorf("Queue is empty"))
+		ch.Error(s, i, errors.New("queue is empty"))
 		return
 	}
 

@@ -106,12 +106,12 @@ func downloadAudio(url url.URL, id string) error {
 	var cmdString string
 	if strings.Contains(url.String(), "playlist") {
 		cmdString = fmt.Sprintf(
-			`yt-dlp --cookies cookies.txt -x "https://www.youtube.com/watch?v=%s" --audio-format opus --audio-quality 0 -o audio/%s`,
+			`yt-dlp -x "https://www.youtube.com/watch?v=%s" --audio-format opus --audio-quality 0 -o audio/%s`,
 			id, id,
 		)
 	} else {
 		cmdString = fmt.Sprintf(
-			`yt-dlp --cookies cookies.txt -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`,
+			`yt-dlp -x "%s" --audio-format opus --audio-quality 0 -o audio/%s`,
 			url.String(), id,
 		)
 	}

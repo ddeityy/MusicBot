@@ -37,8 +37,6 @@ func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.Interact
 
 	ch.inVC = true
 
-	ch.Success(s, i, "Joined")
-
 	ch.lg.Info("Joined voice channel")
 }
 
@@ -69,8 +67,6 @@ func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.Interac
 
 func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleAdd: "
-
-	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))

@@ -37,6 +37,8 @@ func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.Interact
 
 	ch.inVC = true
 
+	ch.Success(s, i, "Joined")
+
 	ch.lg.Info("Joined voice channel")
 }
 
@@ -67,6 +69,8 @@ func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.Interac
 
 func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleAdd: "
+
+	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
@@ -109,6 +113,8 @@ func (ch *CommandHandler) handleAdd(s *discordgo.Session, i *discordgo.Interacti
 func (ch *CommandHandler) handleRemove(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleRemove: "
 
+	ch.Wait(s, i)
+
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
 		ch.Error(s, i, fmt.Errorf("invalid interaction type: %s", i.Type.String()))
@@ -123,12 +129,15 @@ func (ch *CommandHandler) handleRemove(s *discordgo.Session, i *discordgo.Intera
 		ch.Error(s, i, fmt.Errorf("Error removing song from queue: %w", err))
 	}
 
-	ch.Success(s, i, "Removed from queue")
+	ch.WaitSuccess(s, i, "Removed from queue")
+
 	ch.lg.Info("Successfully removed: %s", title)
 }
 
 func (ch *CommandHandler) handleQueue(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleQueue: "
+
+	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
@@ -136,12 +145,15 @@ func (ch *CommandHandler) handleQueue(s *discordgo.Session, i *discordgo.Interac
 		return
 	}
 
-	ch.Success(s, i, ch.GetFormattedQueue())
+	ch.WaitSuccess(s, i, ch.GetFormattedQueue())
+
 	ch.lg.Info("Successfully sent queue")
 }
 
 func (ch *CommandHandler) handleShuffle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleShuffle: "
+
+	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
@@ -151,12 +163,15 @@ func (ch *CommandHandler) handleShuffle(s *discordgo.Session, i *discordgo.Inter
 
 	ch.Shuffle()
 
-	ch.Success(s, i, "Shuffled")
+	ch.WaitSuccess(s, i, "Shuffled")
+
 	ch.lg.Info("Successfully shuffled queue")
 }
 
 func (ch *CommandHandler) handleClear(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	const op string = "handleClear: "
+
+	ch.Wait(s, i)
 
 	if i.Type != discordgo.InteractionApplicationCommand {
 		ch.lg.Error(op+"Invalid interaction type: ", fmt.Errorf("%v", i.Type))
@@ -166,7 +181,8 @@ func (ch *CommandHandler) handleClear(s *discordgo.Session, i *discordgo.Interac
 
 	ch.ClearQueue()
 
-	ch.Success(s, i, "Cleared queue")
+	ch.WaitSuccess(s, i, "Cleared queue")
+
 	ch.lg.Info("Successfully cleared queue")
 }
 

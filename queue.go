@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -22,6 +23,7 @@ type CommandHandler struct {
 	isSpeaking bool
 	skipChan   chan struct{}
 	pauseChan  chan struct{}
+	ctx        context.Context
 }
 
 func NewCommandHandler(logger *logger) *CommandHandler {
@@ -34,6 +36,7 @@ func NewCommandHandler(logger *logger) *CommandHandler {
 		false,
 		make(chan struct{}),
 		make(chan struct{}),
+		context.Background(),
 	}
 }
 

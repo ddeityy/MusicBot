@@ -26,7 +26,7 @@ func (ch *CommandHandler) handleJoin(s *discordgo.Session, i *discordgo.Interact
 
 	for _, vs := range g.VoiceStates {
 		if vs.UserID == i.Member.User.ID {
-			ch.voiceConn, err = s.ChannelVoiceJoin(GUILD, vs.ChannelID, false, false)
+			ch.voiceConn, err = s.ChannelVoiceJoin(ch.ctx, GUILD, vs.ChannelID, false, false)
 			if err != nil {
 				ch.lg.Error(op+"Error joining voice channel: ", err)
 				ch.Error(s, i, fmt.Errorf("Error joining voice channel: %w", err))
@@ -54,7 +54,7 @@ func (ch *CommandHandler) handleLeave(s *discordgo.Session, i *discordgo.Interac
 
 	ch.isSpeaking = false
 
-	if err = ch.voiceConn.Disconnect(); err != nil {
+	if err = ch.voiceConn.Disconnect(ch.ctx); err != nil {
 		ch.lg.Error(op+"Error leaving voice channel: ", err)
 		ch.Error(s, i, fmt.Errorf("Error leaving voice channel: %w", err))
 		return
